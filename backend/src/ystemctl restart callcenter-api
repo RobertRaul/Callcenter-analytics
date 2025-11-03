@@ -1,0 +1,5 @@
+● callcenter-api.service - Call Center Analytics API
+     Loaded: loaded (/etc/systemd/system/callcenter-api.service; enabled; vendor preset: enabled)
+     Active: activating (auto-restart) (Result: exit-code) since Wed 2025-10-29 21:38:30 UTC; 944ms ago
+    Process: 27656 ExecStart=/opt/callcenter-analytics/backend/venv/bin/python main.py [0;1;31m(code=exited, status=1/FAILURE)[0m
+   Main PID: 27656 (code=exited, status=1/FAILURE)

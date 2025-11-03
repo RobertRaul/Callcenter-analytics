@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(systemctl restart:*)",
+      "Bash(systemctl status:*)",
+      "Bash(npm run build:*)",
+      "Bash(sudo systemctl restart:*)",
+      "Bash(sshpass:*)",
+      "Read(//var/log/asterisk/**)",
+      "Read(//tmp/**)",
+      "Bash(sudo journalctl:*)",
+      "Bash(sudo systemctl status:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(awk:*)",
+      "Bash(pip install:*)",
+      "Bash(cat:*)",
+      "Bash(ls -lh /tmp/test_*.{pdf,xlsx})",
+      "Bash(ls:*)",
+      "Bash(journalctl:*)",
+      "Bash(mysql -u root -e:*)",
+      "Bash(timeout 5 python:*)",
+      "Bash(npm install:*)",
+      "Bash(for file in Queues.jsx Agents.jsx Reports.jsx)",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(if ! grep -q \"const today = new Date\" \"$file\")",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(else)",
+      "Bash(fi)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

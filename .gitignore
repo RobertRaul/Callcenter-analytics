@@ -1,0 +1,49 @@
+## Root ignores
+*.log
+*.pid
+*.pyc
+__pycache__/
+.DS_Store
+*.sqlite
+*.sqlite3
+*.db
+
+## Backend (Python)
+backend/venv/
+backend/logs/
+backend/users.db
+backend/__pycache__/
+backend/*.pyc
+
+# If backend generates compiled bytecode inside src
+backend/src/__pycache__/
+
+## Python general
+.Python
+env/
+venv/
+ENV/
+venv/
+.venv/
+
+## Frontend (Node)
+frontend/node_modules/
+frontend/build/
+
+# Temporary build cache
+frontend/.cache/
+frontend/npm-debug.log
+frontend/yarn-debug.log
+frontend/yarn-error.log
+
+## Environment variables (if you add env files later)
+.env
+.env.*
+*.env
+
+## System files
+Thumbs.db
+
+## Shell script outputs
+*.swp
+tmp/
