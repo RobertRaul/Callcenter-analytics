@@ -9,7 +9,7 @@ __pycache__/
 *.db
 
 ## Backend (Python)
-backend/.venv
+backend/.env
 backend/venv/
 backend/logs/
 backend/users.db
