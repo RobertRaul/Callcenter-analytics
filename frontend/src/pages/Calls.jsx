@@ -129,6 +129,33 @@ const Calls = () => {
     return statusMap[status] || status;
   };
 
+  const getEventText = (event) => {
+    const eventMap = {
+      'ENTERQUEUE': 'Llamada Entrante',
+      'CONNECT': 'Conectada',
+      'COMPLETEAGENT': 'Finalizada por Agente',
+      'COMPLETECALLER': 'Finalizada por Cliente',
+      'RINGNOANSWER': 'Sin Respuesta',
+      'RINGCANCELED': 'Cancelada',
+      'ABANDON': 'Abandonada',
+      'EXITWITHTIMEOUT': 'Timeout',
+      'EXITWITHKEY': 'Salida por Teclado',
+      'TRANSFER': 'Transferida',
+      'BLINDTRANSFER': 'Transfer. Ciega',
+      'ATTENDEDTRANSFER': 'Transfer. Atendida',
+      'DID': 'Número Marcado',
+      'ADDMEMBER': 'Agente Agregado',
+      'REMOVEMEMBER': 'Agente Removido',
+      'PAUSE': 'En Pausa',
+      'UNPAUSE': 'Activo',
+      'AGENTDUMP': 'Desconectado',
+      'SYSCOMPAT': 'Compatibilidad',
+      'CONFIGRELOAD': 'Recarga Config.',
+      'QUEUESTART': 'Inicio Cola'
+    };
+    return eventMap[event] || event;
+  };
+
   const handlePlayRecording = (callid) => {
     // Toggle reproductor
     if (playingCallId === callid) {
@@ -488,7 +515,7 @@ const Calls = () => {
                               minute: '2-digit'
                             })}
                           </Typography>
-                          <Chip label={call.event} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
+                          <Chip label={getEventText(call.event)} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
                           <Typography variant="caption" fontWeight="bold">
                             {call.talk_time_formatted}
                           </Typography>

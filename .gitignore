@@ -9,11 +9,13 @@ __pycache__/
 *.db
 
 ## Backend (Python)
+backend/.venv
 backend/venv/
 backend/logs/
 backend/users.db
 backend/__pycache__/
 backend/*.pyc
+backend/logs/
 
 # If backend generates compiled bytecode inside src
 backend/src/__pycache__/
@@ -32,6 +34,8 @@ frontend/build/
 
 # Temporary build cache
 frontend/.cache/
+frontend/node_modules
+frontend/build/
 frontend/npm-debug.log
 frontend/yarn-debug.log
 frontend/yarn-error.log
@@ -43,6 +47,7 @@ frontend/yarn-error.log
 
 ## System files
 Thumbs.db
+
 
 ## Shell script outputs
 *.swp

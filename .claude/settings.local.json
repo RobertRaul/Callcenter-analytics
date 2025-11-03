@@ -34,7 +34,8 @@
       "Bash(then)",
       "Bash(echo:*)",
       "Bash(else)",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
