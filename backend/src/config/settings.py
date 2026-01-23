@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "issabel"
     DB_NAME_CDR: str = "asteriskcdrdb"
     DB_NAME_ASTERISK: str = "asterisk"
+
+    # Credenciales para acceso a tabla queue_log
+    DB_USER_QUEUELOG: str = "asteriskuser"
+    DB_PASSWORD_QUEUELOG: str = "aul"
     
     # Configuración de servidor
     SERVER_HOST: str = "0.0.0.0"
@@ -22,6 +26,8 @@ class Settings(BaseSettings):
     
     # CORS
     CORS_ORIGINS: list = [
+	"http://metricas.macsalud.com",
+	"http://www.metricas.macsalud.com",
         "http://localhost:3000",
         "http://192.168.11.3",
         "http://192.168.11.3:3000"

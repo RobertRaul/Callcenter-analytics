@@ -10,12 +10,29 @@ logger = logging.getLogger(__name__)
 
 class AgentsController:
 
+    def __init__(self):
+        """Inicializa el controlador con soporte para servicio optimizado"""
+        self.optimized_service = None
+        self.use_optimized = False
+        self._try_init_optimized_service()
+
+    def _try_init_optimized_service(self):
+        """Intenta inicializar el servicio optimizado si las vistas estÃ¡n disponibles"""
+        try:
+            from services.optimized_stats_service import optimized_stats_service
+            if optimized_stats_service.check_views_available():
+                self.optimized_service = optimized_stats_service
+                self.use_optimized = True
+                logger.info("âœ“ AgentsController using OPTIMIZED service")
+        except:
+            pass  # Silently fall back to legacy
+
     def get_available_agents(self) -> List[dict]:
         """
         Obtiene la lista de agentes disponibles desde queue_log
         """
         try:
-            # Obtener agentes de los últimos 7 días
+            # Obtener agentes de los ï¿½ltimos 7 dï¿½as
             end_date = datetime.now()
             start_date = end_date - timedelta(days=7)
 
@@ -59,11 +76,23 @@ class AgentsController:
                              agent: Optional[str] = None) -> List[dict]:
         """
         Estadisticas detalladas por agente desde queue_log
+        Usa servicio optimizado si estÃ¡ disponible (MUCHO mÃ¡s rÃ¡pido)
         """
+        # Usar servicio optimizado si estÃ¡ disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_agent_statistics_optimized(start_date, end_date, agent)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con mÃ©todo legacy como fallback
+
+        # MÃ©todo legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("âš  Using LEGACY service for agents - this may take several minutes with large datasets")
 
             stats = queue_log_parser.get_agent_statistics(start_dt, end_dt, agent)
             logger.info(f"Agent statistics: {len(stats)} results")
@@ -116,7 +145,7 @@ class AgentsController:
                     if record['data2'] and str(record['data2']).isdigit():
                         queue_stats[queue]['talk_times'].append(int(record['data2']))
 
-            # Calcular estadísticas
+            # Calcular estadï¿½sticas
             results = []
             for queue_name, stats in queue_stats.items():
                 total_talk = sum(stats['talk_times'])
@@ -248,7 +277,7 @@ class AgentsController:
 
             records = queue_log_parser.read_log(start_date, end_date)
 
-            # Obtener último estado de cada agente
+            # Obtener ï¿½ltimo estado de cada agente
             agents_status = {}
 
             for record in records:
@@ -258,7 +287,7 @@ class AgentsController:
 
                 agent_ext = agent_name.split('/')[-1] if '/' in agent_name else agent_name
 
-                # Actualizar con el evento más reciente
+                # Actualizar con el evento mï¿½s reciente
                 if agent_ext not in agents_status or record['time'] > agents_status[agent_ext]['last_activity']:
                     last_event = record['event']
 

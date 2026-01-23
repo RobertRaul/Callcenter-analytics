@@ -1,42 +1,43 @@
-// pages/Queues.jsx
+// pages/Queues.jsx - Migrado a Ant Design
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Grid,
   Card,
-  CardContent,
+  Row,
+  Col,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
+  DatePicker,
   Button,
-  CircularProgress,
+  Spin,
   Alert,
-  Chip,
-} from '@mui/material';
+  Tag,
+  Typography,
+  Statistic,
+  Space
+} from 'antd';
 import {
-  Queue as QueueIcon,
-  TrendingUp,
-  Phone,
-  Timer,
-  CheckCircle,
-} from '@mui/icons-material';
+  UnorderedListOutlined,
+  PhoneOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  RiseOutlined,
+  SyncOutlined,
+  TeamOutlined
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { queuesAPI } from '../services/api';
+import { MACSA_COLORS } from '../config/theme';
+
+const { RangePicker } = DatePicker;
+const { Title, Text } = Typography;
 
 const Queues = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   // Fechas - fecha actual
-  const today = new Date().toISOString().split('T')[0];
-
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  const today = dayjs();
+  const [dateRange, setDateRange] = useState([today, today]);
 
   // Datos
   const [queuesList, setQueuesList] = useState([]);
@@ -50,13 +51,16 @@ const Queues = () => {
       loadRealtimeStatus();
     }, 30000);
     return () => clearInterval(interval);
-  }, [startDate, endDate]);
+  }, [dateRange]);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
+
       // Cargar lista de colas
       const listResponse = await queuesAPI.getList();
       const queuesData = listResponse.data.data;
@@ -85,226 +89,266 @@ const Queues = () => {
     }
   };
 
+  const tableColumns = [
+    {
+      title: 'Cola',
+      dataIndex: 'queue_name',
+      key: 'queue_name',
+      render: (text) => (
+        <Space>
+          <UnorderedListOutlined style={{ color: MACSA_COLORS.blue }} />
+          <strong>{text}</strong>
+        </Space>
+      )
+    },
+    {
+      title: 'Total Llamadas',
+      dataIndex: 'total_calls',
+      key: 'total_calls',
+      align: 'right'
+    },
+    {
+      title: 'Contestadas',
+      dataIndex: 'answered_calls',
+      key: 'answered_calls',
+      align: 'right',
+      render: (value) => (
+        <Tag icon={<CheckCircleOutlined />} color="success">
+          {value}
+        </Tag>
+      )
+    },
+    {
+      title: 'Abandonadas',
+      dataIndex: 'abandoned_calls',
+      key: 'abandoned_calls',
+      align: 'right',
+      render: (value) => (
+        <Tag icon={<CloseCircleOutlined />} color="error">
+          {value}
+        </Tag>
+      )
+    },
+    {
+      title: 'Tasa Respuesta',
+      dataIndex: 'answer_rate',
+      key: 'answer_rate',
+      align: 'right',
+      render: (value) => <strong>{value}%</strong>
+    },
+    {
+      title: 'Tasa Abandono',
+      dataIndex: 'abandon_rate',
+      key: 'abandon_rate',
+      align: 'right',
+      render: (value) => `${value}%`
+    },
+    {
+      title: 'Tiempo Espera Prom.',
+      dataIndex: 'avg_wait_time',
+      key: 'avg_wait_time',
+      align: 'right',
+      render: (value) => (
+        <Space>
+          <ClockCircleOutlined style={{ color: MACSA_COLORS.gray }} />
+          {Math.round(value)}s
+        </Space>
+      )
+    },
+    {
+      title: 'Tiempo Conversación Prom.',
+      dataIndex: 'avg_talk_time',
+      key: 'avg_talk_time',
+      align: 'right',
+      render: (value) => (
+        <Space>
+          <PhoneOutlined style={{ color: MACSA_COLORS.gray }} />
+          {Math.round(value)}s
+        </Space>
+      )
+    },
+    {
+      title: 'Nivel de Servicio',
+      dataIndex: 'service_level',
+      key: 'service_level',
+      align: 'right',
+      render: (value) => (
+        <Space>
+          <RiseOutlined style={{ color: MACSA_COLORS.green }} />
+          {value}%
+        </Space>
+      )
+    }
+  ];
+
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Colas
-      </Typography>
+    <div>
+      <Title level={3}>Colas</Title>
 
       {/* Estado en tiempo real */}
-      <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+      <Title level={5} style={{ marginTop: 24 }}>
         Estado en Tiempo Real (últimos 5 minutos)
-      </Typography>
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      </Title>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {realtimeStatus.map((queue) => (
-          <Grid item xs={12} sm={6} md={4} key={queue.queue_name}>
+          <Col xs={24} sm={12} md={8} lg={6} key={queue.queue_name}>
             <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <QueueIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">{queue.queue_name}</Typography>
-                </Box>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <UnorderedListOutlined style={{ color: MACSA_COLORS.blue, fontSize: 20, marginRight: 8 }} />
+                  <Text strong style={{ fontSize: 16 }}>{queue.queue_name}</Text>
+                </div>
 
-                <Grid container spacing={1}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Agentes disponibles
-                    </Typography>
-                    <Typography variant="h6">
-                      {queue.available_agents}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Completadas 5min
-                    </Typography>
-                    <Typography variant="h6">
-                      {queue.calls_completed_5min}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Abandonadas 5min
-                    </Typography>
-                    <Typography variant="h6" color="error">
-                      {queue.calls_abandoned_5min}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Nivel de servicio
-                    </Typography>
-                    <Typography variant="h6" color="success.main">
-                      {queue.service_level_5min}%
-                    </Typography>
-                  </Grid>
-                </Grid>
-              </CardContent>
+                <Row gutter={[8, 8]}>
+                  <Col span={12}>
+                    <Statistic
+                      title="Agentes disponibles"
+                      value={queue.available_agents}
+                      prefix={<TeamOutlined />}
+                      valueStyle={{ fontSize: 18 }}
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <Statistic
+                      title="Completadas 5min"
+                      value={queue.calls_completed_5min}
+                      prefix={<CheckCircleOutlined />}
+                      valueStyle={{ fontSize: 18, color: MACSA_COLORS.green }}
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <Statistic
+                      title="Abandonadas 5min"
+                      value={queue.calls_abandoned_5min}
+                      prefix={<CloseCircleOutlined />}
+                      valueStyle={{ fontSize: 18, color: MACSA_COLORS.red }}
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <Statistic
+                      title="Nivel de servicio"
+                      value={queue.service_level_5min}
+                      suffix="%"
+                      prefix={<RiseOutlined />}
+                      valueStyle={{ fontSize: 18, color: MACSA_COLORS.green }}
+                    />
+                  </Col>
+                </Row>
+              </Space>
             </Card>
-          </Grid>
+          </Col>
         ))}
         {realtimeStatus.length === 0 && !loading && (
-          <Grid item xs={12}>
-            <Alert severity="info">
-              No hay actividad reciente en las colas
-            </Alert>
-          </Grid>
+          <Col span={24}>
+            <Alert
+              message="No hay actividad reciente en las colas"
+              type="info"
+              showIcon
+            />
+          </Col>
         )}
-      </Grid>
+      </Row>
 
       {/* Filtros de fecha */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Estadísticas Históricas
-        </Typography>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha inicio"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
+      <Card style={{ marginBottom: 24 }}>
+        <Title level={5}>Estadísticas Históricas</Title>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={8}>
+            <RangePicker
+              value={dateRange}
+              onChange={(dates) => setDateRange(dates || [today, today])}
+              format="DD/MM/YYYY"
+              style={{ width: '100%' }}
             />
-          </Grid>
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha fin"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Grid>
-          <Grid item xs={12} sm={4}>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
             <Button
-              variant="contained"
+              onClick={() => setDateRange([today, today])}
+              block
+            >
+              Hoy
+            </Button>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
               onClick={loadData}
-              fullWidth
-              disabled={loading}
+              loading={loading}
+              block
             >
               Buscar
             </Button>
-          </Grid>
-        </Grid>
-      </Paper>
+          </Col>
+        </Row>
+      </Card>
 
       {/* Error */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
+        <Alert
+          message="Error"
+          description={error}
+          type="error"
+          showIcon
+          closable
+          onClose={() => setError(null)}
+          style={{ marginBottom: 24 }}
+        />
       )}
 
       {/* Tabla de estadísticas */}
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-          <CircularProgress />
-        </Box>
+        <div style={{ textAlign: 'center', padding: '100px 0' }}>
+          <Spin size="large" tip="Cargando estadísticas de colas..." />
+        </div>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Cola</TableCell>
-                <TableCell align="right">Total Llamadas</TableCell>
-                <TableCell align="right">Contestadas</TableCell>
-                <TableCell align="right">Abandonadas</TableCell>
-                <TableCell align="right">Tasa Respuesta</TableCell>
-                <TableCell align="right">Tasa Abandono</TableCell>
-                <TableCell align="right">Tiempo Espera Prom.</TableCell>
-                <TableCell align="right">Tiempo Conversación Prom.</TableCell>
-                <TableCell align="right">Nivel de Servicio</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {queuesStats.map((queue) => (
-                <TableRow key={queue.queue_name}>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <QueueIcon fontSize="small" sx={{ mr: 1 }} />
-                      <strong>{queue.queue_name}</strong>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">{queue.total_calls}</TableCell>
-                  <TableCell align="right">
-                    <Chip
-                      icon={<CheckCircle />}
-                      label={queue.answered_calls}
-                      color="success"
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Chip
-                      label={queue.abandoned_calls}
-                      color="error"
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <strong>{queue.answer_rate}%</strong>
-                  </TableCell>
-                  <TableCell align="right">
-                    {queue.abandon_rate}%
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <Timer fontSize="small" sx={{ mr: 0.5 }} />
-                      {Math.round(queue.avg_wait_time)}s
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <Phone fontSize="small" sx={{ mr: 0.5 }} />
-                      {Math.round(queue.avg_talk_time)}s
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <TrendingUp fontSize="small" sx={{ mr: 0.5 }} />
-                      {queue.service_level}%
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {queuesStats.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={9} align="center">
-                    No hay estadísticas disponibles para el período seleccionado
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Card title="Estadísticas por Cola" style={{ marginBottom: 24 }}>
+          <Table
+            columns={tableColumns}
+            dataSource={queuesStats}
+            rowKey="queue_name"
+            locale={{
+              emptyText: 'No hay estadísticas disponibles para el período seleccionado'
+            }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `Total: ${total} colas`
+            }}
+          />
+        </Card>
       )}
 
-      {/* Lista de colas disponibles */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Colas Configuradas
-        </Typography>
-        <Grid container spacing={2}>
+      {/* Lista de colas configuradas */}
+      <Card title="Colas Configuradas">
+        <Row gutter={[16, 16]}>
           {queuesList.map((queue) => (
-            <Grid item xs={12} sm={6} md={4} key={queue.queue_name}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="h6">
-                    {queue.queue_name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {queue.total_agents} agente(s) asignado(s)
-                  </Typography>
-                </CardContent>
+            <Col xs={24} sm={12} md={8} lg={6} key={queue.queue_name}>
+              <Card size="small" bordered>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space>
+                    <UnorderedListOutlined style={{ color: MACSA_COLORS.blue, fontSize: 18 }} />
+                    <Text strong style={{ fontSize: 16 }}>{queue.queue_name}</Text>
+                  </Space>
+                  <Text type="secondary">
+                    <TeamOutlined /> {queue.total_agents} agente(s) asignado(s)
+                  </Text>
+                </Space>
               </Card>
-            </Grid>
+            </Col>
           ))}
-        </Grid>
-      </Paper>
-    </Box>
+          {queuesList.length === 0 && !loading && (
+            <Col span={24}>
+              <Alert
+                message="No hay colas configuradas"
+                type="info"
+                showIcon
+              />
+            </Col>
+          )}
+        </Row>
+      </Card>
+    </div>
   );
 };
 

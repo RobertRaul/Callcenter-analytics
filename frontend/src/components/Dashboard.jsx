@@ -1,82 +1,48 @@
-// components/Dashboard.jsx
+// components/Dashboard.jsx - Migrado a Ant Design con Chart.js
 import React, { useState, useEffect } from 'react';
+import { Row, Col, Card, Statistic, Switch, DatePicker, Button, Alert, Spin, Typography } from 'antd';
 import {
-  Box,
-  Grid,
-  Paper,
-  Typography,
-  Card,
-  CardContent,
-  CircularProgress,
-  Alert,
-  TextField,
-  Button,
-  FormControlLabel,
-  Switch,
-} from '@mui/material';
-import {
-  Phone,
-  CheckCircle,
-  Cancel,
-  TrendingUp,
-  AccessTime,
-  People,
-} from '@mui/icons-material';
+  PhoneOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  TeamOutlined,
+  SyncOutlined,
+  RiseOutlined,
+  FallOutlined,
+  ClockCircleOutlined
+} from '@ant-design/icons';
 import { dashboardAPI, callsAPI } from '../services/api';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
-import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from 'recharts';
+import dayjs from 'dayjs';
+import 'dayjs/locale/es';
+import BarChartComponent from './charts/BarChartComponent';
+import DoughnutChartComponent from './charts/DoughnutChartComponent';
+import LineChartComponent from './charts/LineChartComponent';
+import { MACSA_COLORS } from '../config/theme';
+
+const { Title, Text } = Typography;
 
 // Componente de tarjeta de estadística
 const StatCard = ({ title, value, subtitle, icon: Icon, color, trend }) => (
-  <Card sx={{ height: '100%', position: 'relative', overflow: 'visible' }}>
-    <CardContent>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Box>
-          <Typography color="text.secondary" gutterBottom variant="overline">
-            {title}
-          </Typography>
-          <Typography variant="h4" component="div" fontWeight="bold">
-            {value}
-          </Typography>
-          {subtitle && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {subtitle}
-            </Typography>
-          )}
-          {trend && (
-            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-              <TrendingUp 
-                sx={{ 
-                  fontSize: 16, 
-                  mr: 0.5, 
-                  color: trend > 0 ? 'success.main' : 'error.main' 
-                }} 
-              />
-              <Typography 
-                variant="body2" 
-                color={trend > 0 ? 'success.main' : 'error.main'}
-              >
-                {trend > 0 ? '+' : ''}{trend}% vs ayer
-              </Typography>
-            </Box>
-          )}
-        </Box>
-        <Box
-          sx={{
-            bgcolor: `${color}.main`,
-            borderRadius: 2,
-            p: 1.5,
-            color: 'white',
-          }}
-        >
-          <Icon sx={{ fontSize: 32 }} />
-        </Box>
-      </Box>
-    </CardContent>
+  <Card>
+    <Statistic
+      title={title}
+      value={value}
+      prefix={<Icon style={{ color }} />}
+      suffix={
+        trend !== undefined && trend !== 0 ? (
+          <span style={{ fontSize: 14, marginLeft: 8, color: trend > 0 ? MACSA_COLORS.green : MACSA_COLORS.red }}>
+            {trend > 0 ? <RiseOutlined /> : <FallOutlined />}
+            {Math.abs(trend)}%
+          </span>
+        ) : null
+      }
+      valueStyle={{ fontSize: 28 }}
+    />
+    {subtitle && (
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+        {subtitle}
+      </Text>
+    )}
   </Card>
 );
 
@@ -84,15 +50,15 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [lastUpdate, setLastUpdate] = useState(dayjs());
   const [hourlyData, setHourlyData] = useState([]);
-  const [dispositionData, setDispositionData] = useState([]);
+  const [selectedDateData, setSelectedDateData] = useState(null);
 
   // Filtros de fecha
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today = dayjs().format('YYYY-MM-DD');
+  const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
 
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(dayjs());
   const [useRealtime, setUseRealtime] = useState(true);
 
   const fetchData = async (dateToFetch = null) => {
@@ -101,26 +67,18 @@ const Dashboard = () => {
       const response = await dashboardAPI.getSummary();
       setData(response.data.data);
 
-      // Usar la fecha seleccionada o la actual (asegurarse de que sea string)
-      let targetDate = dateToFetch || selectedDate || today;
+      // Usar la fecha seleccionada o la actual
+      let targetDate = dateToFetch || selectedDate.format('YYYY-MM-DD') || today;
 
-      // Convertir siempre a string si no lo es
-      if (typeof targetDate !== 'string') {
-        if (targetDate instanceof Date) {
-          targetDate = targetDate.toISOString().split('T')[0];
-        } else {
-          targetDate = String(targetDate);
-        }
-      }
+      // Cargar estadísticas para la fecha seleccionada
+      const statsResponse = await callsAPI.getStatistics(targetDate, targetDate);
+      setSelectedDateData(statsResponse.data.data);
 
       // Cargar datos para gráficos
       const hourlyResponse = await callsAPI.getHourlyDistribution(targetDate, targetDate);
       setHourlyData(hourlyResponse.data.data?.data || []);
 
-      const dispositionResponse = await callsAPI.getDispositionSummary(targetDate, targetDate);
-      setDispositionData(dispositionResponse.data.data?.data || []);
-
-      setLastUpdate(new Date());
+      setLastUpdate(dayjs());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -134,7 +92,7 @@ const Dashboard = () => {
     // Actualizar cada 30 segundos solo si está en modo tiempo real
     let interval;
     if (useRealtime) {
-      interval = setInterval(fetchData, 30000);
+      interval = setInterval(() => fetchData(), 30000);
     }
 
     return () => {
@@ -144,24 +102,30 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <CircularProgress size={60} />
-      </Box>
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
+        <Spin size="large" tip="Cargando dashboard..." />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Alert severity="error" sx={{ m: 2 }}>
-        Error al cargar el dashboard: {error}
-      </Alert>
+      <Alert
+        message="Error al cargar el dashboard"
+        description={error}
+        type="error"
+        showIcon
+        style={{ margin: 24 }}
+      />
     );
   }
 
-  const { today: todayData, yesterday: yesterdayData, week, queues, agents } = data;
+  const { today: todayData, yesterday: yesterdayData, week, agents } = data || {};
 
   // Determinar qué datos mostrar según la fecha seleccionada
   let mainData, comparisonData, periodLabel;
+
+  const selectedDateStr = selectedDate.format('YYYY-MM-DD');
 
   if (useRealtime) {
     // Modo tiempo real: muestra hoy si tiene datos, sino ayer
@@ -171,22 +135,19 @@ const Dashboard = () => {
     periodLabel = hasDataToday ? 'Hoy' : 'Ayer (Últimos datos)';
   } else {
     // Modo manual: mostrar la fecha seleccionada
-    if (selectedDate === today) {
+    if (selectedDateStr === today) {
       mainData = todayData;
       comparisonData = yesterdayData;
       periodLabel = 'Hoy';
-    } else if (selectedDate === yesterday) {
+    } else if (selectedDateStr === yesterday) {
       mainData = yesterdayData;
       comparisonData = null;
       periodLabel = 'Ayer';
     } else {
-      // Para otras fechas, usar los datos de ayer como referencia
-      mainData = yesterdayData;
+      // Para otras fechas, usar los datos cargados para esa fecha
+      mainData = selectedDateData || yesterdayData;
       comparisonData = null;
-      periodLabel = new Date(selectedDate).toLocaleDateString('es-ES', {
-        day: 'numeric',
-        month: 'short'
-      });
+      periodLabel = selectedDate.locale('es').format('D [de] MMM');
     }
   }
 
@@ -207,302 +168,306 @@ const Dashboard = () => {
   ) : 0;
 
   // Contar agentes activos
-  const activeAgents = agents?.filter(a => a.status !== 'UNAVAILABLE').length || 0;
+  const activeAgents = agents?.filter(a => a.status !== 'UNAVAILABLE').length || 4;
+
+  // Datos para gráfica de barras (llamadas por hora)
+  const barChartData = {
+    labels: (hourlyData || []).map(h => `${h.hour}:00h`),
+    datasets: [
+      {
+        label: 'Contestadas',
+        data: (hourlyData || []).map(h => h.answered_calls || 0),
+        backgroundColor: MACSA_COLORS.green,
+        borderWidth: 1
+      },
+      {
+        label: 'No Contestadas',
+        data: (hourlyData || []).map(h => h.missed_calls || 0),
+        backgroundColor: MACSA_COLORS.red,
+        borderWidth: 1
+      }
+    ]
+  };
+
+  // Datos para gráfica de pie (tasa de abandono)
+  const pieChartData = {
+    labels: ['Atendidas', 'Abandonadas', 'Sin Respuesta'],
+    datasets: [{
+      data: [
+        mainData?.answered_calls || 0,
+        mainData?.abandoned_calls || 0,
+        (mainData?.total_calls || 0) - (mainData?.answered_calls || 0) - (mainData?.abandoned_calls || 0)
+      ],
+      backgroundColor: [MACSA_COLORS.green, MACSA_COLORS.orange, MACSA_COLORS.red],
+      borderWidth: 2,
+      borderColor: '#fff'
+    }]
+  };
+
+  // Datos para gráfica de líneas (tiempo de espera)
+  const lineChartData = {
+    labels: (hourlyData || []).map(h => `${h.hour}:00h`),
+    datasets: [{
+      label: 'Tiempo Espera Promedio (seg)',
+      data: (hourlyData || []).map(h => h.avg_wait_time || 0),
+      borderColor: MACSA_COLORS.blue,
+      backgroundColor: 'rgba(33, 150, 243, 0.1)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: 4,
+      pointHoverRadius: 6
+    }]
+  };
+
+  const abandonRate = mainData?.abandoned_calls && mainData?.total_calls
+    ? ((mainData.abandoned_calls / mainData.total_calls) * 100).toFixed(1)
+    : 0;
 
   return (
-    <Box sx={{ flexGrow: 1, p: 3 }}>
+    <div>
       {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          Dashboard General
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Última actualización: {format(lastUpdate, "dd 'de' MMMM, HH:mm:ss", { locale: es })}
-        </Typography>
-      </Box>
+      <div style={{ marginBottom: 24 }}>
+        <Title level={3}>Dashboard General</Title>
+        <Text type="secondary">
+          Última actualización: {lastUpdate.locale('es').format('DD [de] MMMM, HH:mm:ss')}
+        </Text>
+      </div>
 
       {/* Filtros */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={6} md={4}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={useRealtime}
-                  onChange={(e) => setUseRealtime(e.target.checked)}
-                  color="primary"
-                />
-              }
-              label="Auto-actualización (Tiempo Real)"
-            />
-          </Grid>
+      <Card style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={6}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <Switch
+                checked={useRealtime}
+                onChange={(checked) => setUseRealtime(checked)}
+                style={{ marginRight: 8 }}
+              />
+              <Text>Auto-actualización</Text>
+            </div>
+          </Col>
 
           {!useRealtime && (
             <>
-              <Grid item xs={12} sm={6} md={3}>
-                <TextField
-                  label="Fecha"
-                  type="date"
+              <Col xs={24} sm={12} md={6}>
+                <DatePicker
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                  size="small"
+                  onChange={(date) => setSelectedDate(date || dayjs())}
+                  format="DD/MM/YYYY"
+                  style={{ width: '100%' }}
                 />
-              </Grid>
-              <Grid item xs={12} sm={6} md={2}>
+              </Col>
+              <Col xs={12} sm={6} md={4}>
                 <Button
-                  variant="outlined"
-                  onClick={() => setSelectedDate(today)}
-                  fullWidth
-                  size="small"
+                  onClick={() => setSelectedDate(dayjs())}
+                  block
                 >
                   Hoy
                 </Button>
-              </Grid>
-              <Grid item xs={12} sm={6} md={2}>
+              </Col>
+              <Col xs={12} sm={6} md={4}>
                 <Button
-                  variant="outlined"
-                  onClick={() => setSelectedDate(yesterday)}
-                  fullWidth
-                  size="small"
+                  onClick={() => setSelectedDate(dayjs().subtract(1, 'day'))}
+                  block
                 >
                   Ayer
                 </Button>
-              </Grid>
+              </Col>
             </>
           )}
 
-          <Grid item xs={12} sm={6} md={useRealtime ? 2 : 1}>
+          <Col xs={24} sm={12} md={useRealtime ? 6 : 4}>
             <Button
-              variant="contained"
+              type="primary"
+              icon={<SyncOutlined />}
               onClick={() => fetchData()}
-              fullWidth
-              size="small"
-              disabled={loading}
+              loading={loading}
+              block
             >
               Actualizar
             </Button>
-          </Grid>
-        </Grid>
+          </Col>
+        </Row>
 
         {!useRealtime && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Modo manual activado. Mostrando datos de: <strong>{periodLabel}</strong>
-            {selectedDate === today && (todayData?.total_calls || 0) === 0 && (
-              <> - No hay llamadas registradas aún para hoy.</>
-            )}
-          </Alert>
+          <Alert
+            message={`Modo manual activado. Mostrando datos de: ${periodLabel}`}
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
         )}
-      </Paper>
+      </Card>
 
       {/* Estadísticas principales */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} md={6}>
           <StatCard
             title={`Llamadas ${periodLabel}`}
             value={mainData?.total_calls || 0}
             subtitle={`${week?.total_calls || 0} esta semana`}
-            icon={Phone}
-            color="primary"
+            icon={PhoneOutlined}
+            color={MACSA_COLORS.blue}
             trend={callsTrend}
           />
-        </Grid>
+        </Col>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Col xs={24} sm={12} md={6}>
           <StatCard
             title="Contestadas"
             value={mainData?.answered_calls || 0}
-            subtitle={`${mainData?.answer_rate || 0}% tasa de respuesta`}
-            icon={CheckCircle}
-            color="success"
+            subtitle={`${(mainData?.answer_rate || 0).toFixed(1)}% tasa de respuesta`}
+            icon={CheckCircleOutlined}
+            color={MACSA_COLORS.green}
             trend={answeredTrend}
           />
-        </Grid>
+        </Col>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Col xs={24} sm={12} md={6}>
           <StatCard
             title="Abandonadas"
             value={mainData?.abandoned_calls || 0}
             subtitle={`${Math.round((mainData?.abandoned_calls || 0) / (mainData?.total_calls || 1) * 100)}% del total`}
-            icon={Cancel}
-            color="error"
+            icon={CloseCircleOutlined}
+            color={MACSA_COLORS.red}
           />
-        </Grid>
+        </Col>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Col xs={24} sm={12} md={6}>
           <StatCard
-            title="Agentes"
-            value={activeAgents > 0 ? activeAgents : 4}
-            subtitle={activeAgents > 0 ? `${agents?.length || 0} total` : '4 configurados'}
-            icon={People}
-            color="info"
+            title="Agentes Activos"
+            value={activeAgents}
+            subtitle={`${agents?.length || 4} total`}
+            icon={TeamOutlined}
+            color={MACSA_COLORS.blue}
           />
-        </Grid>
-      </Grid>
+        </Col>
+      </Row>
 
       {/* Métricas adicionales */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
-              Tiempo Promedio {periodLabel}
-            </Typography>
-            <Box sx={{ mt: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body2">Duración de llamada:</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                  {Math.round(mainData?.avg_duration || 0)} seg
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body2">Tiempo de espera:</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                  {Math.round(mainData?.avg_wait_time || 0)} seg
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Llamada más larga:</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                  {Math.round(mainData?.max_talk_time || 0)} seg
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-        </Grid>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} md={12}>
+          <Card title={`Tiempo Promedio ${periodLabel}`}>
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Statistic
+                  title="Duración de llamada"
+                  value={Math.round(mainData?.avg_duration || 0)}
+                  suffix="seg"
+                  prefix={<ClockCircleOutlined />}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Tiempo de espera"
+                  value={Math.round(mainData?.avg_wait_time || 0)}
+                  suffix="seg"
+                  prefix={<ClockCircleOutlined />}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Llamada más larga"
+                  value={Math.round(mainData?.max_talk_time || 0)}
+                  suffix="seg"
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Duración total"
+                  value={Math.round((mainData?.total_duration || 0) / 60)}
+                  suffix="min"
+                />
+              </Col>
+            </Row>
+          </Card>
+        </Col>
 
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
-              Resumen Semanal
-            </Typography>
-            <Box sx={{ mt: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body2">Total llamadas:</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                  {week?.total_calls || 0}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body2">Contestadas:</Typography>
-                <Typography variant="body2" fontWeight="bold" color="success.main">
-                  {week?.answered_calls || 0} ({week?.answer_rate || 0}%)
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Abandonadas:</Typography>
-                <Typography variant="body2" fontWeight="bold" color="error.main">
-                  {week?.abandoned_calls || 0}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-        </Grid>
-      </Grid>
+        <Col xs={24} md={12}>
+          <Card title="Resumen Semanal">
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Statistic
+                  title="Total llamadas"
+                  value={week?.total_calls || 0}
+                  prefix={<PhoneOutlined />}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Contestadas"
+                  value={week?.answered_calls || 0}
+                  suffix={`(${(week?.answer_rate || 0).toFixed(1)}%)`}
+                  valueStyle={{ color: MACSA_COLORS.green }}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Abandonadas"
+                  value={week?.abandoned_calls || 0}
+                  valueStyle={{ color: MACSA_COLORS.red }}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="Tasa de respuesta"
+                  value={(week?.answer_rate || 0).toFixed(1)}
+                  suffix="%"
+                  valueStyle={{ color: (week?.answer_rate || 0) >= 80 ? MACSA_COLORS.green : MACSA_COLORS.orange }}
+                />
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+      </Row>
 
       {/* Gráficos */}
-      <Grid container spacing={3} sx={{ mt: 1 }}>
+      <Row gutter={[16, 16]}>
         {/* Gráfico 1: Llamadas por Hora del Día */}
-        <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Llamadas Durante el Día (Por Hora)
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={hourlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="hour"
-                  label={{ value: 'Hora del Día', position: 'insideBottom', offset: -5 }}
-                  tickFormatter={(hour) => `${hour}:00h`}
-                />
-                <YAxis label={{ value: 'Cantidad de Llamadas', angle: -90, position: 'insideLeft' }} />
-                <Tooltip
-                  labelFormatter={(hour) => `Hora: ${hour}:00`}
-                  formatter={(value, name) => [value, name]}
-                />
-                <Legend />
-                <Bar dataKey="answered_calls" name="Contestadas" fill="#4caf50" />
-                <Bar dataKey="missed_calls" name="No Contestadas" fill="#f44336" />
-              </BarChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
+        <Col xs={24} lg={16}>
+          <Card title="Llamadas Durante el Día (Por Hora)">
+            <BarChartComponent
+              data={barChartData}
+              height={300}
+              options={{
+                scales: {
+                  x: { stacked: true },
+                  y: { stacked: true, beginAtZero: true }
+                }
+              }}
+            />
+          </Card>
+        </Col>
 
         {/* Gráfico 2: Tasa de Abandono */}
-        <Grid item xs={12} lg={4}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Tasa de Abandono
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: 'Atendidas', value: mainData?.answered_calls || 0, fill: '#4caf50' },
-                    { name: 'Abandonadas', value: mainData?.abandoned_calls || 0, fill: '#ff9800' },
-                    { name: 'Sin Respuesta', value: (mainData?.total_calls || 0) - (mainData?.answered_calls || 0) - (mainData?.abandoned_calls || 0), fill: '#f44336' }
-                  ]}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  dataKey="value"
-                >
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <Box sx={{ mt: 2, textAlign: 'center' }}>
-              <Typography variant="h4" color="warning.main">
-                {mainData?.abandoned_calls && mainData?.total_calls
-                  ? ((mainData.abandoned_calls / mainData.total_calls) * 100).toFixed(1)
-                  : 0}%
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Tasa de Abandono Total
-              </Typography>
-            </Box>
-          </Paper>
-        </Grid>
+        <Col xs={24} lg={8}>
+          <Card title="Distribución de Llamadas">
+            <DoughnutChartComponent data={pieChartData} height={300} />
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <Title level={2} style={{ color: MACSA_COLORS.orange, margin: 0 }}>
+                {abandonRate}%
+              </Title>
+              <Text type="secondary">Tasa de Abandono Total</Text>
+            </div>
+          </Card>
+        </Col>
 
         {/* Gráfico 3: Distribución de Tiempos de Espera */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Tiempo de Espera Promedio por Hora (En Segundos)
-            </Typography>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={hourlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="hour"
-                  label={{ value: 'Hora del Día', position: 'insideBottom', offset: -5 }}
-                  tickFormatter={(hour) => `${hour}:00h`}
-                />
-                <YAxis
-                  label={{ value: 'Tiempo de Espera (segundos)', angle: -90, position: 'insideLeft' }}
-                />
-                <Tooltip
-                  labelFormatter={(hour) => `Hora: ${hour}:00`}
-                  formatter={(value) => [`${value} segundos`, 'Tiempo de Espera']}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="avg_wait_time"
-                  name="Tiempo Espera Promedio (seg)"
-                  stroke="#2196f3"
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-        </Grid>
-      </Grid>
-    </Box>
+        <Col xs={24}>
+          <Card title="Tiempo de Espera Promedio por Hora (Segundos)">
+            <LineChartComponent
+              data={lineChartData}
+              height={250}
+              options={{
+                scales: {
+                  y: { beginAtZero: true }
+                }
+              }}
+            />
+          </Card>
+        </Col>
+      </Row>
+    </div>
   );
 };
 

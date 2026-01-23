@@ -40,6 +40,7 @@ from routes.recordings_routes import router as recordings_router
 from routes.reports_routes import router as reports_router
 from routes.auth_routes import router as auth_router
 from routes.users_routes import router as users_router
+from routes.analisis_routes import router as analisis_router
 
 # Registrar routers
 app.include_router(auth_router)
@@ -49,6 +50,7 @@ app.include_router(queues_router)
 app.include_router(agents_router)
 app.include_router(recordings_router)
 app.include_router(reports_router)
+app.include_router(analisis_router)
 
 # Middleware para logging de requests
 @app.middleware("http")

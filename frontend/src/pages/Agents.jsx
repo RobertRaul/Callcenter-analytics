@@ -1,45 +1,43 @@
-// pages/Agents.jsx
+// pages/Agents.jsx - Migrado a Ant Design
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Grid,
   Card,
-  CardContent,
+  Row,
+  Col,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
+  DatePicker,
   Button,
-  CircularProgress,
+  Spin,
   Alert,
-  Chip,
+  Tag,
+  Typography,
   Avatar,
-  LinearProgress,
-} from '@mui/material';
+  Progress,
+  Space,
+  Statistic
+} from 'antd';
 import {
-  Person,
-  Phone,
-  Timer,
-  CheckCircle,
-  TrendingUp,
-  AccessTime,
-} from '@mui/icons-material';
+  UserOutlined,
+  PhoneOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  SyncOutlined,
+  TrophyOutlined
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { agentsAPI } from '../services/api';
+import { MACSA_COLORS } from '../config/theme';
+
+const { RangePicker } = DatePicker;
+const { Title, Text } = Typography;
 
 const Agents = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fechas - usar hasta ayer para incluir datos recientes
-  const today = new Date().toISOString().split('T')[0];
-
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  // Fechas - usar hasta hoy
+  const today = dayjs();
+  const [dateRange, setDateRange] = useState([today, today]);
 
   // Datos
   const [agentsList, setAgentsList] = useState([]);
@@ -54,13 +52,16 @@ const Agents = () => {
       loadRealtimeStatus();
     }, 30000);
     return () => clearInterval(interval);
-  }, [startDate, endDate]);
+  }, [dateRange]);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
+
       // Cargar lista de agentes
       const listResponse = await agentsAPI.getList();
       const agentsData = listResponse.data.data;
@@ -119,274 +120,297 @@ const Agents = () => {
     return statusMap[status] || status;
   };
 
+  const tableColumns = [
+    {
+      title: 'Agente',
+      dataIndex: 'agent',
+      key: 'agent',
+      render: (text, record) => (
+        <Space>
+          <Avatar icon={<UserOutlined />} style={{ backgroundColor: MACSA_COLORS.blue }} />
+          <div>
+            <div><strong>{text}</strong></div>
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.agent_full}</Text>
+          </div>
+        </Space>
+      )
+    },
+    {
+      title: 'Total Llamadas',
+      dataIndex: 'total_calls',
+      key: 'total_calls',
+      align: 'right',
+      render: (value) => (
+        <Tag icon={<PhoneOutlined />} color="blue">
+          {value}
+        </Tag>
+      )
+    },
+    {
+      title: 'Completadas',
+      dataIndex: 'completed_calls',
+      key: 'completed_calls',
+      align: 'right',
+      render: (value) => (
+        <Tag icon={<CheckCircleOutlined />} color="success">
+          {value}
+        </Tag>
+      )
+    },
+    {
+      title: 'Tiempo Total',
+      dataIndex: 'total_talk_time_formatted',
+      key: 'total_talk_time_formatted',
+      align: 'right',
+      render: (value) => (
+        <Space>
+          <ClockCircleOutlined style={{ color: MACSA_COLORS.gray }} />
+          <strong>{value}</strong>
+        </Space>
+      )
+    },
+    {
+      title: 'Prom. Conversación',
+      dataIndex: 'avg_talk_time',
+      key: 'avg_talk_time',
+      align: 'right',
+      render: (value) => `${Math.round(value)}s`
+    },
+    {
+      title: 'Prom. Espera',
+      dataIndex: 'avg_wait_before_answer',
+      key: 'avg_wait_before_answer',
+      align: 'right',
+      render: (value) => (
+        <Space>
+          <ClockCircleOutlined style={{ color: MACSA_COLORS.gray }} />
+          {Math.round(value)}s
+        </Space>
+      )
+    },
+    {
+      title: 'Tiempo Más Largo',
+      dataIndex: 'max_talk_time',
+      key: 'max_talk_time',
+      align: 'right',
+      render: (value) => `${value}s`
+    },
+    {
+      title: 'Tiempo Más Corto',
+      dataIndex: 'min_talk_time',
+      key: 'min_talk_time',
+      align: 'right',
+      render: (value) => `${value}s`
+    }
+  ];
+
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Agentes
-      </Typography>
+    <div>
+      <Title level={3}>Agentes</Title>
 
       {/* Estado en tiempo real */}
-      <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+      <Title level={5} style={{ marginTop: 24 }}>
         Estado en Tiempo Real
-      </Typography>
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      </Title>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {realtimeStatus.map((agent) => (
-          <Grid item xs={12} sm={6} md={4} lg={3} key={agent.agent}>
+          <Col xs={24} sm={12} md={8} lg={6} key={agent.agent}>
             <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Avatar sx={{ mr: 1, bgcolor: 'primary.main' }}>
-                    <Person />
-                  </Avatar>
-                  <Box>
-                    <Typography variant="subtitle1">
-                      {agent.agent}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Cola: {agent.queue}
-                    </Typography>
-                  </Box>
-                </Box>
-                <Chip
-                  label={getStatusText(agent.status)}
-                  color={getStatusColor(agent.status)}
-                  size="small"
-                  sx={{ mb: 1 }}
-                />
-                <Typography variant="caption" display="block" color="text.secondary">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Space>
+                  <Avatar icon={<UserOutlined />} style={{ backgroundColor: MACSA_COLORS.blue }} />
+                  <div>
+                    <div><strong>{agent.agent}</strong></div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Cola: {agent.queue}</Text>
+                  </div>
+                </Space>
+                <Tag color={getStatusColor(agent.status)}>
+                  {getStatusText(agent.status)}
+                </Tag>
+                <Text type="secondary" style={{ fontSize: 12 }}>
                   Última actividad: {new Date(agent.last_activity).toLocaleTimeString('es-ES')}
-                </Typography>
-              </CardContent>
+                </Text>
+              </Space>
             </Card>
-          </Grid>
+          </Col>
         ))}
         {realtimeStatus.length === 0 && !loading && (
-          <Grid item xs={12}>
-            <Alert severity="info">
-              No hay agentes activos actualmente
-            </Alert>
-          </Grid>
+          <Col span={24}>
+            <Alert
+              message="No hay agentes activos actualmente"
+              type="info"
+              showIcon
+            />
+          </Col>
         )}
-      </Grid>
+      </Row>
 
       {/* Filtros de fecha */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Estadísticas Históricas
-        </Typography>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha inicio"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
+      <Card style={{ marginBottom: 24 }}>
+        <Title level={5}>Estadísticas Históricas</Title>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={8}>
+            <RangePicker
+              value={dateRange}
+              onChange={(dates) => setDateRange(dates || [today, today])}
+              format="DD/MM/YYYY"
+              style={{ width: '100%' }}
             />
-          </Grid>
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha fin"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Grid>
-          <Grid item xs={12} sm={4}>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
             <Button
-              variant="contained"
+              onClick={() => setDateRange([today, today])}
+              block
+            >
+              Hoy
+            </Button>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
               onClick={loadData}
-              fullWidth
-              disabled={loading}
+              loading={loading}
+              block
             >
               Buscar
             </Button>
-          </Grid>
-        </Grid>
-      </Paper>
+          </Col>
+        </Row>
+      </Card>
 
       {/* Error */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
+        <Alert
+          message="Error"
+          description={error}
+          type="error"
+          showIcon
+          closable
+          onClose={() => setError(null)}
+          style={{ marginBottom: 24 }}
+        />
       )}
 
-      {/* Comparación de Agentes */}
+      {/* Ranking de Agentes */}
       {comparison.length > 0 && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Ranking de Agentes
-          </Typography>
-          <Grid container spacing={2}>
+        <Card
+          title={
+            <Space>
+              <TrophyOutlined style={{ color: MACSA_COLORS.gold }} />
+              Ranking de Agentes
+            </Space>
+          }
+          style={{ marginBottom: 24 }}
+        >
+          <Row gutter={[16, 16]}>
             {comparison.slice(0, 5).map((agent, index) => (
-              <Grid item xs={12} key={agent.agent}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Grid container spacing={2} alignItems="center">
-                      <Grid item>
-                        <Avatar sx={{ bgcolor: index < 3 ? 'primary.main' : 'grey.500' }}>
-                          #{agent.rank}
-                        </Avatar>
-                      </Grid>
-                      <Grid item xs>
-                        <Typography variant="h6">
-                          {agent.agent}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
+              <Col xs={24} key={agent.agent}>
+                <Card size="small" bordered>
+                  <Row gutter={[16, 16]} align="middle">
+                    <Col>
+                      <Avatar
+                        size={48}
+                        style={{
+                          backgroundColor: index < 3 ? MACSA_COLORS.gold : MACSA_COLORS.gray,
+                          fontSize: 18,
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        #{agent.rank}
+                      </Avatar>
+                    </Col>
+                    <Col flex="auto">
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>{agent.agent}</Text>
+                      </div>
+                      <div>
+                        <Text type="secondary">
                           {agent.total_calls} llamadas | {agent.total_talk_time_formatted} total
-                        </Typography>
-                        <LinearProgress
-                          variant="determinate"
-                          value={agent.efficiency}
-                          sx={{ mt: 1 }}
+                        </Text>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <Progress
+                          percent={agent.efficiency}
+                          strokeColor={MACSA_COLORS.blue}
+                          size="small"
                         />
-                        <Typography variant="caption" color="text.secondary">
+                        <Text type="secondary" style={{ fontSize: 12 }}>
                           Eficiencia: {agent.efficiency}%
-                        </Typography>
-                      </Grid>
-                      <Grid item>
-                        <Typography variant="h5" color="primary">
-                          {agent.total_calls}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          llamadas
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  </CardContent>
+                        </Text>
+                      </div>
+                    </Col>
+                    <Col>
+                      <Statistic
+                        value={agent.total_calls}
+                        suffix="llamadas"
+                        valueStyle={{ color: MACSA_COLORS.blue }}
+                      />
+                    </Col>
+                  </Row>
                 </Card>
-              </Grid>
+              </Col>
             ))}
-          </Grid>
-        </Paper>
+          </Row>
+        </Card>
       )}
 
       {/* Tabla de estadísticas detalladas */}
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-          <CircularProgress />
-        </Box>
+        <div style={{ textAlign: 'center', padding: '100px 0' }}>
+          <Spin size="large" tip="Cargando estadísticas de agentes..." />
+        </div>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Agente</TableCell>
-                <TableCell align="right">Total Llamadas</TableCell>
-                <TableCell align="right">Completadas</TableCell>
-                <TableCell align="right">Tiempo Total</TableCell>
-                <TableCell align="right">Prom. Conversación</TableCell>
-                <TableCell align="right">Prom. Espera</TableCell>
-                <TableCell align="right">Tiempo Más Largo</TableCell>
-                <TableCell align="right">Tiempo Más Corto</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {agentsStats.map((agent) => (
-                <TableRow key={agent.agent}>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Avatar sx={{ mr: 1, width: 32, height: 32, bgcolor: 'primary.main' }}>
-                        <Person fontSize="small" />
-                      </Avatar>
-                      <Box>
-                        <Typography variant="body2">
-                          <strong>{agent.agent}</strong>
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {agent.agent_full}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Chip
-                      icon={<Phone />}
-                      label={agent.total_calls}
-                      color="primary"
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Chip
-                      icon={<CheckCircle />}
-                      label={agent.completed_calls}
-                      color="success"
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <AccessTime fontSize="small" sx={{ mr: 0.5 }} />
-                      <strong>{agent.total_talk_time_formatted}</strong>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    {Math.round(agent.avg_talk_time)}s
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <Timer fontSize="small" sx={{ mr: 0.5 }} />
-                      {Math.round(agent.avg_wait_before_answer)}s
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    {agent.max_talk_time}s
-                  </TableCell>
-                  <TableCell align="right">
-                    {agent.min_talk_time}s
-                  </TableCell>
-                </TableRow>
-              ))}
-              {agentsStats.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No hay estadísticas disponibles para el período seleccionado
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Card title="Estadísticas Detalladas" style={{ marginBottom: 24 }}>
+          <Table
+            columns={tableColumns}
+            dataSource={agentsStats}
+            rowKey="agent"
+            locale={{
+              emptyText: 'No hay estadísticas disponibles para el período seleccionado'
+            }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `Total: ${total} agentes`
+            }}
+          />
+        </Card>
       )}
 
-      {/* Lista de agentes disponibles */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Agentes Configurados
-        </Typography>
-        <Grid container spacing={2}>
+      {/* Lista de agentes configurados */}
+      <Card title="Agentes Configurados">
+        <Row gutter={[16, 16]}>
           {agentsList.map((agent) => (
-            <Grid item xs={12} sm={6} md={4} key={agent.agent}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Avatar sx={{ mr: 1, bgcolor: 'primary.main' }}>
-                      <Person />
-                    </Avatar>
-                    <Box>
-                      <Typography variant="subtitle1">
-                        {agent.agent}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {agent.agent_full}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
+            <Col xs={24} sm={12} md={8} key={agent.agent}>
+              <Card size="small" bordered>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space>
+                    <Avatar icon={<UserOutlined />} style={{ backgroundColor: MACSA_COLORS.blue }} />
+                    <div>
+                      <div><strong>{agent.agent}</strong></div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{agent.agent_full}</Text>
+                    </div>
+                  </Space>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
                     Colas: {agent.queues.join(', ')}
-                  </Typography>
-                </CardContent>
+                  </Text>
+                </Space>
               </Card>
-            </Grid>
+            </Col>
           ))}
-        </Grid>
-      </Paper>
-    </Box>
+          {agentsList.length === 0 && !loading && (
+            <Col span={24}>
+              <Alert
+                message="No hay agentes configurados"
+                type="info"
+                showIcon
+              />
+            </Col>
+          )}
+        </Row>
+      </Card>
+    </div>
   );
 };
 

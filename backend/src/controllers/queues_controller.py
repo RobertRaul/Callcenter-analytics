@@ -1,4 +1,4 @@
-# controllers/queues_controller.py - VERSI�N CORREGIDA v2
+# controllers/queues_controller.py - VERSI�N CORREGIDA v2
 from datetime import datetime
 from config.database import db
 from config.settings import settings
@@ -11,6 +11,23 @@ logger = logging.getLogger(__name__)
 
 class QueuesController:
 
+    def __init__(self):
+        """Inicializa el controlador con soporte para servicio optimizado"""
+        self.optimized_service = None
+        self.use_optimized = False
+        self._try_init_optimized_service()
+
+    def _try_init_optimized_service(self):
+        """Intenta inicializar el servicio optimizado si las vistas están disponibles"""
+        try:
+            from services.optimized_stats_service import optimized_stats_service
+            if optimized_stats_service.check_views_available():
+                self.optimized_service = optimized_stats_service
+                self.use_optimized = True
+                logger.info("✓ QueuesController using OPTIMIZED service")
+        except:
+            pass  # Silently fall back to legacy
+
     def get_available_queues(self) -> List[dict]:
         """
         Obtiene la lista de colas disponibles desde queue_log
@@ -21,18 +38,30 @@ class QueuesController:
             return queues
         except Exception as e:
             logger.error(f"Error getting available queues: {e}", exc_info=True)
-            # Retornar lista vac�a en caso de error
+            # Retornar lista vac�a en caso de error
             return []
 
     def get_queue_statistics(self, start_date: str, end_date: str,
                              queue_name: Optional[str] = None) -> List[dict]:
         """
         Estadisticas detalladas por cola desde queue_log
+        Usa servicio optimizado si está disponible (MUCHO más rápido)
         """
+        # Usar servicio optimizado si está disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_queue_statistics_optimized(start_date, end_date, queue_name)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con método legacy como fallback
+
+        # Método legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("⚠ Using LEGACY service for queues - this may take several minutes with large datasets")
 
             stats = queue_log_parser.get_queue_statistics(start_dt, end_dt, queue_name)
             logger.info(f"Queue statistics: {len(stats)} results")

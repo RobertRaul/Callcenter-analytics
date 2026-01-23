@@ -1,52 +1,49 @@
-// pages/Calls.jsx
+// pages/Calls.jsx - Migrado a Ant Design
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Paper,
-  Typography,
-  Grid,
   Card,
-  CardContent,
+  Row,
+  Col,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
+  DatePicker,
   Button,
   Tabs,
-  Tab,
-  Chip,
-  CircularProgress,
+  Tag,
+  Spin,
   Alert,
-  TablePagination,
-  IconButton,
-  Collapse,
-} from '@mui/material';
+  Typography,
+  Space,
+  Statistic,
+  Avatar,
+  Collapse
+} from 'antd';
 import {
-  Phone,
-  CheckCircle,
-  Cancel,
-  Schedule,
-  Person,
-  PlayArrow,
-  GetApp,
-  Stop,
-  VolumeUp,
-} from '@mui/icons-material';
+  PhoneOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  UserOutlined,
+  SyncOutlined,
+  SoundOutlined,
+  DownloadOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { callsAPI, recordingsAPI } from '../services/api';
+import { MACSA_COLORS } from '../config/theme';
+
+const { RangePicker } = DatePicker;
+const { Title, Text } = Typography;
+const { Panel } = Collapse;
 
 const Calls = () => {
-  const [tabValue, setTabValue] = useState(0);
+  const [activeTab, setActiveTab] = useState('1');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fechas - usar hasta ayer para incluir datos recientes
-  const today = new Date().toISOString().split('T')[0];
-
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  // Fechas
+  const today = dayjs();
+  const [dateRange, setDateRange] = useState([today, today]);
 
   // Datos
   const [callsList, setCallsList] = useState([]);
@@ -55,22 +52,22 @@ const Calls = () => {
 
   // Estado del reproductor de audio
   const [playingCallId, setPlayingCallId] = useState(null);
-
-  // Paginación
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [playingRowKey, setPlayingRowKey] = useState(null);
 
   useEffect(() => {
     loadData();
-  }, [startDate, endDate]);
+  }, [dateRange, activeTab]);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
+
       // Cargar datos según la pestaña activa
-      if (tabValue === 0) {
+      if (activeTab === '1') {
         // Lista de llamadas - traer más registros para paginación
         const response = await callsAPI.getList(startDate, endDate, null, 500);
         // Filtrar anexos telefónicos (números cortos <= 4 dígitos)
@@ -79,8 +76,7 @@ const Calls = () => {
           return phone && phone !== 'N/A' && phone.length > 4;
         });
         setCallsList(filteredCalls);
-        setPage(0); // Reset página al cargar nuevos datos
-      } else if (tabValue === 1) {
+      } else if (activeTab === '2') {
         // Llamadas por agente
         const response = await callsAPI.getByAgent(startDate, endDate);
         setCallsByAgent(response.data.data.agents || []);
@@ -95,10 +91,6 @@ const Calls = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleTabChange = (event, newValue) => {
-    setTabValue(newValue);
   };
 
   const getStatusColor = (status) => {
@@ -156,12 +148,14 @@ const Calls = () => {
     return eventMap[event] || event;
   };
 
-  const handlePlayRecording = (callid) => {
+  const handlePlayRecording = (callid, rowKey) => {
     // Toggle reproductor
     if (playingCallId === callid) {
       setPlayingCallId(null);
+      setPlayingRowKey(null);
     } else {
       setPlayingCallId(callid);
+      setPlayingRowKey(rowKey);
     }
   };
 
@@ -171,374 +165,375 @@ const Calls = () => {
     window.open(downloadUrl, '_blank');
   };
 
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Llamadas
-      </Typography>
-
-      {/* Estadísticas */}
-      {statistics && (
-        <Grid container spacing={3} sx={{ mb: 3 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Phone color="primary" sx={{ mr: 1 }} />
-                  <Typography variant="h6">Total</Typography>
-                </Box>
-                <Typography variant="h4">{statistics.total_calls}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Llamadas
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <CheckCircle color="success" sx={{ mr: 1 }} />
-                  <Typography variant="h6">Contestadas</Typography>
-                </Box>
-                <Typography variant="h4">{statistics.answered_calls}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {statistics.answer_rate}% tasa de respuesta
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Cancel color="error" sx={{ mr: 1 }} />
-                  <Typography variant="h6">Abandonadas</Typography>
-                </Box>
-                <Typography variant="h4">{statistics.abandoned_calls}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Llamadas perdidas
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Schedule color="info" sx={{ mr: 1 }} />
-                  <Typography variant="h6">Duración</Typography>
-                </Box>
-                <Typography variant="h4">{Math.round(statistics.avg_duration)}s</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Promedio de conversación
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      )}
-
-      {/* Filtros de fecha */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha inicio"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Grid>
-          <Grid item xs={12} sm={4}>
-            <TextField
-              label="Fecha fin"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Grid>
-          <Grid item xs={12} sm={4}>
+  // Columnas de la tabla para Lista de Llamadas
+  const callsColumns = [
+    {
+      title: 'Fecha/Hora',
+      dataIndex: 'calldate',
+      key: 'calldate',
+      render: (date) => new Date(date).toLocaleString('es-ES', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    },
+    {
+      title: 'Número',
+      dataIndex: 'phone_number',
+      key: 'phone_number',
+      render: (phone) => (
+        <Space>
+          <PhoneOutlined style={{ color: MACSA_COLORS.blue }} />
+          <strong>{phone}</strong>
+        </Space>
+      )
+    },
+    {
+      title: 'Call ID',
+      dataIndex: 'callid',
+      key: 'callid',
+      render: (callid) => (
+        <Text code style={{ fontSize: 11 }}>
+          ...{callid.substring(callid.length - 8)}
+        </Text>
+      )
+    },
+    {
+      title: 'Cola',
+      dataIndex: 'queuename',
+      key: 'queuename'
+    },
+    {
+      title: 'Agente',
+      dataIndex: 'agent',
+      key: 'agent',
+      render: (agent) => agent !== 'N/A' ? <strong>{agent}</strong> : '-'
+    },
+    {
+      title: 'Estado',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => (
+        <Tag color={getStatusColor(status)}>
+          {getStatusText(status)}
+        </Tag>
+      )
+    },
+    {
+      title: 'Espera',
+      dataIndex: 'wait_time_formatted',
+      key: 'wait_time_formatted',
+      align: 'right'
+    },
+    {
+      title: 'Conversación',
+      dataIndex: 'talk_time_formatted',
+      key: 'talk_time_formatted',
+      align: 'right'
+    },
+    {
+      title: 'Total',
+      dataIndex: 'total_time_formatted',
+      key: 'total_time_formatted',
+      align: 'right'
+    },
+    {
+      title: 'Grabación',
+      key: 'recording',
+      align: 'center',
+      render: (_, record, index) => {
+        const rowKey = `${record.callid}-${index}`;
+        return (
+          <Space>
             <Button
-              variant="contained"
-              onClick={loadData}
-              fullWidth
-              disabled={loading}
-            >
-              Buscar
-            </Button>
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* Error */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Tabs */}
-      <Paper sx={{ mb: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange}>
-          <Tab label="Lista de Llamadas" />
-          <Tab label="Por Agente" />
-        </Tabs>
-      </Paper>
-
-      {/* Contenido de tabs */}
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <>
-          {/* Tab 0: Lista de llamadas */}
-          {tabValue === 0 && (
-            <>
-            <TableContainer component={Paper}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Fecha/Hora</TableCell>
-                    <TableCell>Número</TableCell>
-                    <TableCell>Call ID</TableCell>
-                    <TableCell>Cola</TableCell>
-                    <TableCell>Agente</TableCell>
-                    <TableCell>Estado</TableCell>
-                    <TableCell align="right">Espera</TableCell>
-                    <TableCell align="right">Conversación</TableCell>
-                    <TableCell align="right">Total</TableCell>
-                    <TableCell align="center">Grabación</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {callsList
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((call, index) => (
-                    <React.Fragment key={`${call.callid}-${index}`}>
-                      <TableRow>
-                        <TableCell>
-                          {new Date(call.calldate).toLocaleString('es-ES', {
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Phone fontSize="small" sx={{ mr: 0.5, color: 'primary.main' }} />
-                            <strong>{call.phone_number}</strong>
-                          </Box>
-                        </TableCell>
-                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75em' }}>
-                          ...{call.callid.substring(call.callid.length - 8)}
-                        </TableCell>
-                        <TableCell>{call.queuename}</TableCell>
-                        <TableCell>
-                          {call.agent !== 'N/A' ? (
-                            <strong>{call.agent}</strong>
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={getStatusText(call.status)}
-                            color={getStatusColor(call.status)}
-                            size="small"
-                          />
-                        </TableCell>
-                        <TableCell align="right">{call.wait_time_formatted}</TableCell>
-                        <TableCell align="right">{call.talk_time_formatted}</TableCell>
-                        <TableCell align="right">{call.total_time_formatted}</TableCell>
-                        <TableCell align="center">
-                          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                            <IconButton
-                              size="small"
-                              color={playingCallId === call.callid ? 'error' : 'primary'}
-                              onClick={() => handlePlayRecording(call.callid)}
-                              title={playingCallId === call.callid ? 'Detener' : 'Reproducir'}
-                            >
-                              {playingCallId === call.callid ? <Stop /> : <VolumeUp />}
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              color="secondary"
-                              onClick={() => handleDownloadRecording(call.callid, call.calldate)}
-                              title="Descargar"
-                            >
-                              <GetApp />
-                            </IconButton>
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                      {/* Reproductor inline */}
-                      <TableRow>
-                        <TableCell colSpan={10} sx={{ py: 0, borderBottom: 'none' }}>
-                          <Collapse in={playingCallId === call.callid} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 2, bgcolor: 'grey.50' }}>
-                              <audio
-                                controls
-                                autoPlay
-                                style={{ width: '100%' }}
-                                src={recordingsAPI.getStreamUrl(call.callid, call.calldate.split('T')[0])}
-                              >
-                                Tu navegador no soporta el elemento de audio.
-                              </audio>
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </React.Fragment>
-                  ))}
-                  {callsList.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={10} align="center">
-                        No hay llamadas en el rango de fechas seleccionado
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-            <TablePagination
-              component="div"
-              count={callsList.length}
-              page={page}
-              onPageChange={handleChangePage}
-              rowsPerPage={rowsPerPage}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              rowsPerPageOptions={[10, 25, 50, 100]}
-              labelRowsPerPage="Filas por página:"
-              labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+              type={playingCallId === record.callid ? 'primary' : 'default'}
+              danger={playingCallId === record.callid}
+              size="small"
+              icon={playingCallId === record.callid ? <StopOutlined /> : <SoundOutlined />}
+              onClick={() => handlePlayRecording(record.callid, rowKey)}
+              title={playingCallId === record.callid ? 'Detener' : 'Reproducir'}
             />
-            </>
-          )}
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => handleDownloadRecording(record.callid, record.calldate)}
+              title="Descargar"
+            />
+          </Space>
+        );
+      }
+    }
+  ];
 
-          {/* Tab 1: Por agente */}
-          {tabValue === 1 && (
-            <Grid container spacing={2}>
-              {callsByAgent.map((agentData) => (
-                <Grid item xs={12} md={6} key={agentData.agent}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Person sx={{ fontSize: 40, mr: 1, color: 'primary.main' }} />
-                          <Box>
-                            <Typography variant="h6">
-                              Agente {agentData.agent}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {agentData.agent_full}
-                            </Typography>
-                          </Box>
-                        </Box>
-                        <Chip
-                          icon={<Phone />}
-                          label={`${agentData.total_calls} llamadas`}
-                          color="primary"
+  // Renderizar reproductor expandible
+  const expandedRowRender = (record) => {
+    // Solo renderizar si este es el registro que se está reproduciendo
+    if (playingCallId !== record.callid) return null;
+
+    const date = record.calldate.split('T')[0];
+    const streamUrl = recordingsAPI.getStreamUrl(record.callid, date);
+
+    return (
+      <div style={{ padding: '16px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
+        <Text strong style={{ display: 'block', marginBottom: '8px', color: MACSA_COLORS.blue }}>
+          Reproduciendo grabación: {record.callid}
+        </Text>
+        <audio
+          controls
+          autoPlay
+          style={{ width: '100%' }}
+          src={streamUrl}
+          onError={(e) => {
+            console.error('Error loading audio:', e);
+            console.log('Stream URL:', streamUrl);
+          }}
+        >
+          Tu navegador no soporta el elemento de audio.
+        </audio>
+      </div>
+    );
+  };
+
+  // Items de tabs
+  const tabItems = [
+    {
+      key: '1',
+      label: 'Lista de Llamadas',
+      children: (
+        <Card>
+          <Table
+            columns={callsColumns}
+            dataSource={callsList}
+            rowKey={(record, index) => `${record.callid}-${index}`}
+            loading={loading}
+            locale={{
+              emptyText: 'No hay llamadas en el rango de fechas seleccionado'
+            }}
+            pagination={{
+              pageSize: 25,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '25', '50', '100'],
+              showTotal: (total) => `Total: ${total} llamadas`
+            }}
+            expandable={{
+              expandedRowRender: playingRowKey ? expandedRowRender : undefined,
+              expandedRowKeys: playingRowKey ? [playingRowKey] : [],
+              expandIcon: () => null
+            }}
+          />
+        </Card>
+      )
+    },
+    {
+      key: '2',
+      label: 'Por Agente',
+      children: (
+        <Row gutter={[16, 16]}>
+          {callsByAgent.map((agentData) => (
+            <Col xs={24} md={12} key={agentData.agent}>
+              <Card>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space>
+                      <Avatar size={48} icon={<UserOutlined />} style={{ backgroundColor: MACSA_COLORS.blue }} />
+                      <div>
+                        <div><Text strong style={{ fontSize: 16 }}>Agente {agentData.agent}</Text></div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{agentData.agent_full}</Text>
+                      </div>
+                    </Space>
+                    <Tag icon={<PhoneOutlined />} color="blue" style={{ fontSize: 14, padding: '4px 12px' }}>
+                      {agentData.total_calls} llamadas
+                    </Tag>
+                  </div>
+
+                  {/* Stats */}
+                  <Row gutter={[8, 8]} style={{ marginTop: 16 }}>
+                    <Col span={8}>
+                      <Card size="small" style={{ backgroundColor: '#f6ffed', border: '1px solid #b7eb8f', textAlign: 'center' }}>
+                        <Statistic
+                          value={agentData.completed_calls}
+                          valueStyle={{ color: MACSA_COLORS.green, fontSize: 20, fontWeight: 'bold' }}
                         />
-                      </Box>
+                        <Text style={{ fontSize: 11, color: MACSA_COLORS.green }}>Completadas</Text>
+                      </Card>
+                    </Col>
+                    <Col span={8}>
+                      <Card size="small" style={{ backgroundColor: '#e6f7ff', border: '1px solid #91d5ff', textAlign: 'center' }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: MACSA_COLORS.blue }}>{agentData.total_talk_time_formatted}</Text>
+                        <br />
+                        <Text style={{ fontSize: 11, color: MACSA_COLORS.blue }}>Tiempo Total</Text>
+                      </Card>
+                    </Col>
+                    <Col span={8}>
+                      <Card size="small" style={{ backgroundColor: '#fff7e6', border: '1px solid #ffd591', textAlign: 'center' }}>
+                        <Text style={{ fontSize: 20, fontWeight: 'bold', color: MACSA_COLORS.gold }}>{Math.round(agentData.avg_talk_time)}s</Text>
+                        <br />
+                        <Text style={{ fontSize: 11, color: MACSA_COLORS.gold }}>Promedio</Text>
+                      </Card>
+                    </Col>
+                  </Row>
 
-                      <Grid container spacing={2}>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'success.light', borderRadius: 1 }}>
-                            <Typography variant="h5" sx={{ color: 'success.dark', fontWeight: 'bold' }}>
-                              {agentData.completed_calls}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: 'success.dark' }}>
-                              Completadas
-                            </Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
-                            <Typography variant="h5" sx={{ color: 'info.dark', fontWeight: 'bold' }}>
-                              {agentData.total_talk_time_formatted}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: 'info.dark' }}>
-                              Tiempo Total
-                            </Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'warning.light', borderRadius: 1 }}>
-                            <Typography variant="h5" sx={{ color: 'warning.dark', fontWeight: 'bold' }}>
-                              {Math.round(agentData.avg_talk_time)}s
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: 'warning.dark' }}>
-                              Promedio
-                            </Typography>
-                          </Box>
-                        </Grid>
-                      </Grid>
-
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        Últimas {Math.min(5, agentData.calls.length)} llamadas:
-                      </Typography>
+                  {/* Últimas llamadas */}
+                  <div style={{ marginTop: 16 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Últimas {Math.min(5, agentData.calls.length)} llamadas:
+                    </Text>
+                    <div style={{ marginTop: 8 }}>
                       {agentData.calls.slice(0, 5).map((call, index) => (
-                        <Box
+                        <div
                           key={`${call.callid}-${index}`}
-                          sx={{
+                          style={{
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            py: 0.5,
-                            borderBottom: index < 4 ? '1px solid' : 'none',
-                            borderColor: 'divider'
+                            padding: '4px 0',
+                            borderBottom: index < 4 ? '1px solid #f0f0f0' : 'none'
                           }}
                         >
-                          <Typography variant="caption">
+                          <Text style={{ fontSize: 11 }}>
                             {new Date(call.time).toLocaleString('es-ES', {
                               month: '2-digit',
                               day: '2-digit',
                               hour: '2-digit',
                               minute: '2-digit'
                             })}
-                          </Typography>
-                          <Chip label={getEventText(call.event)} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
-                          <Typography variant="caption" fontWeight="bold">
-                            {call.talk_time_formatted}
-                          </Typography>
-                        </Box>
+                          </Text>
+                          <Tag style={{ fontSize: 10, margin: 0 }}>{getEventText(call.event)}</Tag>
+                          <Text strong style={{ fontSize: 11 }}>{call.talk_time_formatted}</Text>
+                        </div>
                       ))}
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-              {callsByAgent.length === 0 && (
-                <Grid item xs={12}>
-                  <Paper sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography color="text.secondary">
-                      No hay datos de agentes en el rango de fechas seleccionado
-                    </Typography>
-                  </Paper>
-                </Grid>
-              )}
-            </Grid>
+                    </div>
+                  </div>
+                </Space>
+              </Card>
+            </Col>
+          ))}
+          {callsByAgent.length === 0 && !loading && (
+            <Col span={24}>
+              <Alert
+                message="No hay datos de agentes en el rango de fechas seleccionado"
+                type="info"
+                showIcon
+              />
+            </Col>
           )}
-        </>
+        </Row>
+      )
+    }
+  ];
+
+  return (
+    <div>
+      <Title level={3}>Llamadas</Title>
+
+      {/* Estadísticas */}
+      {statistics && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Total"
+                value={statistics.total_calls}
+                prefix={<PhoneOutlined style={{ color: MACSA_COLORS.blue }} />}
+                suffix="Llamadas"
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Contestadas"
+                value={statistics.answered_calls}
+                prefix={<CheckCircleOutlined style={{ color: MACSA_COLORS.green }} />}
+                suffix={
+                  <Text type="secondary" style={{ fontSize: 14 }}>
+                    ({statistics.answer_rate}% tasa)
+                  </Text>
+                }
+                valueStyle={{ color: MACSA_COLORS.green }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Abandonadas"
+                value={statistics.abandoned_calls}
+                prefix={<CloseCircleOutlined style={{ color: MACSA_COLORS.red }} />}
+                suffix="Llamadas perdidas"
+                valueStyle={{ color: MACSA_COLORS.red }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="Duración"
+                value={Math.round(statistics.avg_duration)}
+                prefix={<ClockCircleOutlined style={{ color: MACSA_COLORS.blue }} />}
+                suffix="seg promedio"
+              />
+            </Card>
+          </Col>
+        </Row>
       )}
-    </Box>
+
+      {/* Filtros de fecha */}
+      <Card style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} sm={12} md={8}>
+            <RangePicker
+              value={dateRange}
+              onChange={(dates) => setDateRange(dates || [today, today])}
+              format="DD/MM/YYYY"
+              style={{ width: '100%' }}
+            />
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Button
+              onClick={() => setDateRange([today, today])}
+              block
+            >
+              Hoy
+            </Button>
+          </Col>
+          <Col xs={12} sm={6} md={4}>
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
+              onClick={loadData}
+              loading={loading}
+              block
+            >
+              Buscar
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* Error */}
+      {error && (
+        <Alert
+          message="Error"
+          description={error}
+          type="error"
+          showIcon
+          closable
+          onClose={() => setError(null)}
+          style={{ marginBottom: 24 }}
+        />
+      )}
+
+      {/* Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={tabItems}
+        size="large"
+      />
+    </div>
   );
 };
 

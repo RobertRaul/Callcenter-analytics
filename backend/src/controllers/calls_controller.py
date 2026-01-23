@@ -8,6 +8,28 @@ logger = logging.getLogger(__name__)
 
 class CallsController:
 
+    def __init__(self):
+        """Inicializa el controlador con soporte para servicio optimizado"""
+        self.optimized_service = None
+        self.use_optimized = False
+        self._try_init_optimized_service()
+
+    def _try_init_optimized_service(self):
+        """Intenta inicializar el servicio optimizado si las vistas están disponibles"""
+        try:
+            from services.optimized_stats_service import optimized_stats_service
+            if optimized_stats_service.check_views_available():
+                self.optimized_service = optimized_stats_service
+                self.use_optimized = True
+                logger.info("✓ Using OPTIMIZED service with MySQL views (fast queries)")
+            else:
+                logger.warning("⚠ Optimized views not available, using legacy service (slow)")
+                logger.info("To enable fast queries, run: mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb < migrations/001_performance_optimization.sql")
+        except ImportError as e:
+            logger.warning(f"Optimized service not available: {e}, using legacy service")
+        except Exception as e:
+            logger.warning(f"Error initializing optimized service: {e}, using legacy service")
+
     def get_calls_by_date_range(self, start_date: str, end_date: str,
                                  queue: Optional[str] = None) -> List[dict]:
         """
@@ -113,11 +135,23 @@ class CallsController:
                            queue: Optional[str] = None) -> dict:
         """
         Obtiene estadísticas generales de llamadas desde queue_log
+        Usa servicio optimizado si está disponible (MUCHO más rápido)
         """
+        # Usar servicio optimizado si está disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_call_statistics_optimized(start_date, end_date, queue)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con método legacy como fallback
+
+        # Método legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
             # Usar el método de estadísticas del parser
             queue_stats = queue_log_parser.get_queue_statistics(start_dt, end_dt, queue)
@@ -178,11 +212,23 @@ class CallsController:
     def get_hourly_distribution(self, start_date: str, end_date: str) -> List[dict]:
         """
         Distribución de llamadas por hora del día desde queue_log
+        Usa servicio optimizado si está disponible (MUCHO más rápido)
         """
+        # Usar servicio optimizado si está disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_hourly_distribution_optimized(start_date, end_date)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con método legacy como fallback
+
+        # Método legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
             records = queue_log_parser.read_log(start_dt, end_dt)
 
@@ -238,11 +284,23 @@ class CallsController:
     def get_daily_summary(self, start_date: str, end_date: str) -> List[dict]:
         """
         Resumen diario de llamadas desde queue_log
+        Usa servicio optimizado si está disponible (MUCHO más rápido)
         """
+        # Usar servicio optimizado si está disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_daily_summary_optimized(start_date, end_date)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con método legacy como fallback
+
+        # Método legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
             records = queue_log_parser.read_log(start_dt, end_dt)
 
@@ -294,11 +352,23 @@ class CallsController:
     def get_disposition_summary(self, start_date: str, end_date: str) -> List[dict]:
         """
         Resumen por tipo de evento desde queue_log
+        Usa servicio optimizado si está disponible (MUCHO más rápido)
         """
+        # Usar servicio optimizado si está disponible
+        if self.use_optimized and self.optimized_service:
+            try:
+                return self.optimized_service.get_disposition_summary_optimized(start_date, end_date)
+            except Exception as e:
+                logger.warning(f"Error using optimized service, falling back to legacy: {e}")
+                # Continuar con método legacy como fallback
+
+        # Método legacy (LENTO - lee todos los registros)
         try:
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             end_dt = end_dt.replace(hour=23, minute=59, second=59)
+
+            logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
             records = queue_log_parser.read_log(start_dt, end_dt)
 

@@ -36,7 +36,19 @@ async def list_users():
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT id, username, email, full_name, is_active, access_dashboard, access_calls, access_queues, access_agents, access_reports, created_at FROM users")
-    users = [dict(row) for row in c.fetchall()]
+
+    # Convertir 0/1 a booleanos verdaderos
+    users = []
+    for row in c.fetchall():
+        user_dict = dict(row)
+        user_dict['is_active'] = bool(user_dict['is_active'])
+        user_dict['access_dashboard'] = bool(user_dict['access_dashboard'])
+        user_dict['access_calls'] = bool(user_dict['access_calls'])
+        user_dict['access_queues'] = bool(user_dict['access_queues'])
+        user_dict['access_agents'] = bool(user_dict['access_agents'])
+        user_dict['access_reports'] = bool(user_dict['access_reports'])
+        users.append(user_dict)
+
     conn.close()
     return {"success": True, "data": users}
 
