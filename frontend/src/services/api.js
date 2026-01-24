@@ -1,115 +1,252 @@
 // services/api.js
 import axios from 'axios';
 
-// Base URL SIEMPRE apunta al backend, incluyendo /api
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL || 'https://metricas.macsalud.com';
+// ConfiguraciÃ³n base de la API
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 const api = axios.create({
-  baseURL: API_BASE_URL ,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+    baseURL: API_BASE_URL,
+    timeout: 30000,
+    headers: {
+        'Content-Type': 'application/json',
+    },
 });
 
-// Interceptor de requests (token + logging)
+// Interceptor para logging de requests
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    (config) => {
+        console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`);
+        return config;
+    },
+    (error) => {
+        console.error('[API Request Error]', error);
+        return Promise.reject(error);
     }
-
-    console.log(
-      `[API Request] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
-    );
-    return config;
-  },
-  (error) => {
-    console.error('[API Request Error]', error);
-    return Promise.reject(error);
-  }
 );
 
-// Interceptor de respuestas
+// Interceptor para manejo de respuestas y errores
 api.interceptors.response.use(
-  (response) => {
-    console.log(
-      `[API Response] ${response.config.url}`,
-      response.status
-    );
-    return response;
-  },
-  (error) => {
-    console.error('[API Response Error]', error.response || error);
+    (response) => {
+        console.log(`[API Response] ${response.config.url}`, response.status);
+        return response;
+    },
+    (error) => {
+        console.error('[API Response Error]', error.response || error);
 
-    if (error.response) {
-      const message =
-        error.response.data?.detail ||
-        error.response.data?.message ||
-        error.response.data?.error ||
-        'Error del servidor';
-
-      // Opcional: logout automático si expira el token
-      if (error.response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '/login';
-      }
-
-      throw new Error(message);
+        if (error.response) {
+            // Error con respuesta del servidor
+            const message = error.response.data?.message || error.response.data?.error || 'Error del servidor';
+            throw new Error(message);
+        } else if (error.request) {
+            // Error de red
+            throw new Error('No se pudo conectar con el servidor. Verifica la conexiÃ³n.');
+        } else {
+            throw new Error(error.message);
+        }
     }
-
-    if (error.request) {
-      throw new Error('No se pudo conectar con el servidor');
-    }
-
-    throw new Error(error.message);
-  }
 );
 
-/* =======================
-   APIs
-   ======================= */
-
-// Llamadas
+// API de Llamadas
 export const callsAPI = {
-  getStatistics: (startDate, endDate, queue) =>
-    api.get('/calls/statistics', {
-      params: { start_date: startDate, end_date: endDate, queue },
-    }),
+    getStatistics: (startDate, endDate, queue = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (queue) params.queue = queue;
+        return api.get('/calls/statistics', { params });
+    },
 
-  getList: (startDate, endDate, queue, limit = 100) =>
-    api.get('/calls/list', {
-      params: { start_date: startDate, end_date: endDate, queue, limit },
-    }),
+    getList: (startDate, endDate, queue = null, limit = 100) => {
+        const params = { start_date: startDate, end_date: endDate, limit };
+        if (queue) params.queue = queue;
+        return api.get('/calls/list', { params });
+    },
 
-  getHourlyDistribution: (startDate, endDate) =>
-    api.get('/calls/hourly-distribution', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
+    getHourlyDistribution: (startDate, endDate) => {
+        return api.get('/calls/hourly-distribution', {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
 
-  getDailySummary: (startDate, endDate) =>
-    api.get('/calls/daily-summary', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
+    getDailySummary: (startDate, endDate) => {
+        return api.get('/calls/daily-summary', {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
 
-  getDispositionSummary: (startDate, endDate) =>
-    api.get('/calls/disposition-summary', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
+    getDispositionSummary: (startDate, endDate) => {
+        return api.get('/calls/disposition-summary', {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
 
-  getToday: () => api.get('/calls/today'),
-  getThisWeek: () => api.get('/calls/this-week'),
-  getThisMonth: () => api.get('/calls/this-month'),
+    getToday: () => api.get('/calls/today'),
+    getThisWeek: () => api.get('/calls/this-week'),
+    getThisMonth: () => api.get('/calls/this-month'),
 
-  getByAgent: (startDate, endDate, agent) =>
-    api.get('/calls/by-agent', {
-      params: { start_date: startDate, end_date: endDate, agent },
-    }),
+    getByAgent: (startDate, endDate, agent = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (agent) params.agent = agent;
+        return api.get('/calls/by-agent', { params });
+    },
 };
+
+// API de Colas
+export const queuesAPI = {
+    getList: () => api.get('/queues/list'),
+
+    getStatistics: (startDate, endDate, queueName = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (queueName) params.queue_name = queueName;
+        return api.get('/queues/statistics', { params });
+    },
+
+    getEvents: (queueName, startDate, endDate) => {
+        return api.get(`/queues/events/${queueName}`, {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
+
+    getPerformanceByHour: (startDate, endDate, queueName = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (queueName) params.queue_name = queueName;
+        return api.get('/queues/performance-by-hour', { params });
+    },
+
+    getRealtime: () => api.get('/queues/realtime'),
+};
+
+// API de Agentes
+export const agentsAPI = {
+    getList: () => api.get('/agents/list'),
+
+    getStatistics: (startDate, endDate, agent = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (agent) params.agent = agent;
+        return api.get('/agents/statistics', { params });
+    },
+
+    getPerformanceByQueue: (agent, startDate, endDate) => {
+        return api.get(`/agents/${agent}/performance-by-queue`, {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
+
+    getHourlyPerformance: (startDate, endDate, agent = null) => {
+        const params = { start_date: startDate, end_date: endDate };
+        if (agent) params.agent = agent;
+        return api.get('/agents/hourly-performance', { params });
+    },
+
+    getCallHistory: (agent, startDate, endDate, limit = 100) => {
+        return api.get(`/agents/${agent}/call-history`, {
+            params: { start_date: startDate, end_date: endDate, limit }
+        });
+    },
+
+    getRealtime: () => api.get('/agents/realtime'),
+
+    getComparison: (startDate, endDate) => {
+        return api.get('/agents/comparison', {
+            params: { start_date: startDate, end_date: endDate }
+        });
+    },
+};
+
+// API del Dashboard
+export const dashboardAPI = {
+    getSummary: () => api.get('/dashboard/summary'),
+    getHealth: () => api.get('/health'),
+};
+
+// API de Grabaciones
+export const recordingsAPI = {
+    check: (callid, date = null) => {
+        const params = date ? { date } : {};
+        return api.get(`/recordings/check/${callid}`, { params });
+    },
+
+    getStreamUrl: (callid, date = null) => {
+        const params = date ? `?date=${date}` : '';
+        return `/api/recordings/stream/${callid}${params}`;
+    },
+
+    getDownloadUrl: (callid, date = null) => {
+        const params = date ? `?date=${date}` : '';
+        return `/api/recordings/download/${callid}${params}`;
+    },
+
+    list: (date) => {
+        return api.get('/recordings/list', { params: { date } });
+    },
+};
+
+// API de AnÃ¡lisis (Reportes Ejecutivos)
+export const analisisAPI = {
+    getDashboardEjecutivo: (targetDate) => {
+        return api.get('/analisis/dashboard-ejecutivo', {
+            params: { target_date: targetDate }
+        });
+    },
+
+    getComparativaPeriodos: (p1Inicio, p1Fin, p2Inicio, p2Fin) => {
+        return api.get('/analisis/comparativa-periodos', {
+            params: {
+                periodo1_inicio: p1Inicio,
+                periodo1_fin: p1Fin,
+                periodo2_inicio: p2Inicio,
+                periodo2_fin: p2Fin
+            }
+        });
+    },
+
+    getPatronesHorarios: (startDate, endDate) => {
+        return api.get('/analisis/patrones-horarios', {
+            params: {
+                start_date: startDate,
+                end_date: endDate
+            }
+        });
+    },
+
+    getRankingAgentes: (startDate, endDate, metric = 'total_calls') => {
+        return api.get('/analisis/ranking-agentes', {
+            params: {
+                start_date: startDate,
+                end_date: endDate,
+                metric: metric
+            }
+        });
+    },
+
+    // Nuevos reportes avanzados
+    getAnalisisAbandono: (startDate, endDate) => {
+        return api.get('/analisis/analisis-abandono', {
+            params: {
+                start_date: startDate,
+                end_date: endDate
+            }
+        });
+    },
+
+    getMapaCalorSemanal: (startDate, endDate) => {
+        return api.get('/analisis/mapa-calor-semanal', {
+            params: {
+                start_date: startDate,
+                end_date: endDate
+            }
+        });
+    },
+
+    getSLACumplimiento: (startDate, endDate, slaThreshold = 20) => {
+        return api.get('/analisis/sla-cumplimiento', {
+            params: {
+                start_date: startDate,
+                end_date: endDate,
+                sla_threshold: slaThreshold
+            }
+        });
+    },
+};
+
 
 // Usuarios
 export const usersAPI = {
@@ -119,112 +256,6 @@ export const usersAPI = {
   delete: (id) => api.delete(`/users/delete/${id}`),
 };
 
-// Dashboard
-export const dashboardAPI = {
-  getSummary: () => api.get('/dashboard/summary'),
-  getHealth: () => api.get('/health'),
-};
-
-// Grabaciones
-export const recordingsAPI = {
-  check: (callid, date) =>
-    api.get(`/recordings/check/${callid}`, { params: { date } }),
-
-  getStreamUrl: (callid, date) =>
-    `/api/recordings/stream/${callid}${date ? `?date=${date}` : ''}`,
-
-  getDownloadUrl: (callid, date) =>
-    `/api/recordings/download/${callid}${date ? `?date=${date}` : ''}`,
-
-  list: (date) => api.get('/recordings/list', { params: { date } }),
-};
-
-// API de Agentes
-export const agentsAPI = {
-  getList: () => api.get('/agents/list'),
-
-  getStatistics: (startDate, endDate, agent = null) =>
-    api.get('/agents/statistics', {
-      params: { start_date: startDate, end_date: endDate, agent },
-    }),
-
-  getPerformanceByQueue: (agent, startDate, endDate) =>
-    api.get(`/agents/${agent}/performance-by-queue`, {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-
-  getHourlyPerformance: (startDate, endDate, agent = null) =>
-    api.get('/agents/hourly-performance', {
-      params: { start_date: startDate, end_date: endDate, agent },
-    }),
-
-  getCallHistory: (agent, startDate, endDate, limit = 100) =>
-    api.get(`/agents/${agent}/call-history`, {
-      params: { start_date: startDate, end_date: endDate, limit },
-    }),
-
-  getRealtime: () => api.get('/agents/realtime'),
-
-  getComparison: (startDate, endDate) =>
-    api.get('/agents/comparison', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-};
-
-// API de Análisis
-export const analisisAPI = {
-  getResumen: (startDate, endDate) =>
-    api.get('/analisis/resumen', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-
-  getKPIs: (startDate, endDate) =>
-    api.get('/analisis/kpis', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-
-  getTendencias: (startDate, endDate) =>
-    api.get('/analisis/tendencias', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-
-  getComparativo: (startDate, endDate) =>
-    api.get('/analisis/comparativo', {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-};
-// API de Colas
-export const queuesAPI = {
-  getList: () => api.get('/queues/list'),
-
-  getStatistics: (startDate, endDate, queueName = null) =>
-    api.get('/queues/statistics', {
-      params: {
-        start_date: startDate,
-        end_date: endDate,
-        queue_name: queueName,
-      },
-    }),
-
-  getEvents: (queueName, startDate, endDate) =>
-    api.get(`/queues/events/${queueName}`, {
-      params: {
-        start_date: startDate,
-        end_date: endDate,
-      },
-    }),
-
-  getPerformanceByHour: (startDate, endDate, queueName = null) =>
-    api.get('/queues/performance-by-hour', {
-      params: {
-        start_date: startDate,
-        end_date: endDate,
-        queue_name: queueName,
-      },
-    }),
-
-  getRealtime: () => api.get('/queues/realtime'),
-};
 
 
 export default api;
