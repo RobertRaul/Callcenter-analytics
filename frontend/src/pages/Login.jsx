@@ -168,7 +168,7 @@ const Login = ({ onLoginSuccess }) => {
               </div>
               <div>
                 <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
-                  7 Reportes Avanzados
+                  6 Reportes Avanzados
                 </div>
                 <div style={{ color: '#fff', opacity: 0.8, fontSize: '14px' }}>
                   Análisis detallados con insights automáticos

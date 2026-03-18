@@ -74,15 +74,15 @@ export default function Analisis() {
       ),
       children: <MapaCalorSemanal />
     },
-    {
-      key: '7',
-      label: (
-        <span>
-          <CheckCircleOutlined /> SLA y Cumplimiento
-        </span>
-      ),
-      children: <SLACumplimiento />
-    }
+    // {
+    //   key: '7',
+    //   label: (
+    //     <span>
+    //       <CheckCircleOutlined /> SLA y Cumplimiento
+    //     </span>
+    //   ),
+    //   children: <SLACumplimiento />
+    // }
   ];
 
   return (

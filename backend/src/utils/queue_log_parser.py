@@ -277,6 +277,12 @@ class QueueLogParser:
 
         records = []
         start_ts = start_date.timestamp() if start_date else 0
+
+        if end_date:
+            end_ts = (end_date + timedelta(days=1) - timedelta(seconds=1)).timestamp()
+        else:
+            end_ts = float('inf')
+
         end_ts = end_date.timestamp() if end_date else float('inf')
 
         try:
