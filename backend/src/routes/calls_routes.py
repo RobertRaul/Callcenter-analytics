@@ -1,6 +1,6 @@
 # routes/calls_routes.py
 from fastapi import APIRouter, Query, HTTPException
-from datetime import date, datetime, timedelta
+from datetime import date
 from controllers.calls_controller import calls_controller
 from models.schemas import ApiResponse
 from typing import Optional
@@ -101,50 +101,6 @@ async def get_disposition_summary(
             str(end_date)
         )
         return ApiResponse(success=True, data={'data': summary})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/today")
-async def get_today_statistics():
-    """
-    Estadísticas del día actual (acceso rápido)
-    """
-    try:
-        today = date.today()
-        stats = calls_controller.get_call_statistics(str(today), str(today))
-        return ApiResponse(success=True, data=stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/this-week")
-async def get_this_week_statistics():
-    """
-    Estadísticas de la semana actual
-    """
-    try:
-        today = date.today()
-        start_of_week = today - timedelta(days=today.weekday())
-        stats = calls_controller.get_call_statistics(
-            str(start_of_week), 
-            str(today)
-        )
-        return ApiResponse(success=True, data=stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/this-month")
-async def get_this_month_statistics():
-    """
-    Estadísticas del mes actual
-    """
-    try:
-        today = date.today()
-        start_of_month = date(today.year, today.month, 1)
-        stats = calls_controller.get_call_statistics(
-            str(start_of_month),
-            str(today)
-        )
-        return ApiResponse(success=True, data=stats)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
