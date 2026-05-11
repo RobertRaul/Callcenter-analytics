@@ -131,23 +131,6 @@ export const chartColorPalettes = {
     queued: MACSA_COLORS.blue
   },
 
-  // Paleta de gradientes
-  gradients: {
-    blue: 'rgba(33, 150, 243, 0.1)',
-    gold: 'rgba(212, 175, 55, 0.1)',
-    green: 'rgba(82, 196, 26, 0.1)',
-    red: 'rgba(255, 77, 79, 0.1)'
-  }
-};
-
-// Helper para crear gradientes en canvas
-export const createGradient = (ctx, color1, color2) => {
-  if (!ctx) return color1;
-
-  const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-  gradient.addColorStop(0, color1);
-  gradient.addColorStop(1, color2);
-  return gradient;
 };
 
 // Exportar colores MACSA
