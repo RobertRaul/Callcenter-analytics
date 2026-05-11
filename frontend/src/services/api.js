@@ -78,10 +78,6 @@ export const callsAPI = {
         });
     },
 
-    getToday: () => api.get('/calls/today'),
-    getThisWeek: () => api.get('/calls/this-week'),
-    getThisMonth: () => api.get('/calls/this-month'),
-
     getByAgent: (startDate, endDate, agent = null) => {
         const params = { start_date: startDate, end_date: endDate };
         if (agent) params.agent = agent;
