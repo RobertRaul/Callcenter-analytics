@@ -12,9 +12,7 @@ fastapi==0.104.1
 h11==0.16.0
 httptools==0.6.4
 idna==3.11
-numpy==1.24.4
 openpyxl==3.1.5
-pandas==1.5.3
 passlib==1.7.4
 pillow==10.4.0
 pyasn1==0.6.1
@@ -38,4 +36,3 @@ typing-extensions==4.13.2
 uvicorn==0.24.0
 uvloop==0.22.1
 watchfiles==0.24.0
-websockets==12.0
