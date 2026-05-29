@@ -52,3 +52,6 @@ Thumbs.db
 ## Shell script outputs
 *.swp
 tmp/
+
+## Documentacion / informes (no se versionan)
+*.md

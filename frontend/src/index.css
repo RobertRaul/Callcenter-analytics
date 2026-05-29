@@ -23,3 +23,40 @@ code {
 #root {
   min-height: 100vh;
 }
+
+/* ===================== Responsive / Movil ===================== */
+
+/* Evitar scroll horizontal de toda la pagina */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Las tablas tienen su PROPIO scroll horizontal: no rompen el layout en movil */
+.ant-table-content,
+.ant-table-body {
+  overflow-x: auto !important;
+}
+
+/* En pantallas chicas, compactar tarjetas y tipografia para aprovechar el ancho */
+@media (max-width: 575px) {
+  .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* Tabs y filtros que se salen */
+  .ant-tabs-nav {
+    margin-bottom: 8px !important;
+  }
+
+  /* Titulos un poco mas pequenos */
+  h3.ant-typography,
+  .ant-typography h3 {
+    font-size: 18px !important;
+  }
+
+  /* RangePicker y controles a ancho completo */
+  .ant-picker {
+    width: 100% !important;
+  }
+}

@@ -80,8 +80,9 @@ const allMenuItems = [
 // Componente principal con navegación
 function AppLayout({ user, onLogout }) {
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  // En movil el menu arranca oculto
+  const [collapsed, setCollapsed] = useState(window.innerWidth < 768);
 
   // Detectar cambios de tamaño de ventana para responsive
   useEffect(() => {
@@ -122,6 +123,7 @@ function AppLayout({ user, onLogout }) {
         collapsible
         collapsed={collapsed}
         breakpoint="md"
+        collapsedWidth={isMobile ? 0 : 80}
         onBreakpoint={(broken) => {
           setIsMobile(broken);
           if (broken) setCollapsed(true);
@@ -133,7 +135,7 @@ function AppLayout({ user, onLogout }) {
           left: 0,
           top: 0,
           bottom: 0,
-          zIndex: 999
+          zIndex: 1001
         }}
         theme="dark"
         width={240}
@@ -158,6 +160,7 @@ function AppLayout({ user, onLogout }) {
           theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
+          onClick={() => { if (isMobile) setCollapsed(true); }}
           items={menuItems.map(item => ({
             key: item.key,
             icon: item.icon,
@@ -167,11 +170,24 @@ function AppLayout({ user, onLogout }) {
         />
       </Sider>
 
+      {/* Fondo oscuro al abrir el menu en movil (cerrar al tocar) */}
+      {isMobile && !collapsed && (
+        <div
+          onClick={() => setCollapsed(true)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            zIndex: 1000
+          }}
+        />
+      )}
+
       {/* Layout principal */}
       <Layout style={{ marginLeft: collapsed ? (isMobile ? 0 : 80) : (isMobile ? 0 : 240), transition: 'all 0.2s' }}>
         {/* Header */}
         <Header style={{
-          padding: '0 24px',
+          padding: isMobile ? '0 12px' : '0 24px',
           background: '#fff',
           display: 'flex',
           alignItems: 'center',
@@ -203,11 +219,12 @@ function AppLayout({ user, onLogout }) {
 
         {/* Contenido principal */}
         <Content style={{
-          margin: '24px 16px',
-          padding: 24,
+          margin: isMobile ? '12px 8px' : '24px 16px',
+          padding: isMobile ? 12 : 24,
           background: '#fff',
           minHeight: 280,
-          borderRadius: 8
+          borderRadius: 8,
+          overflowX: 'hidden'
         }}>
           <Routes>
             {/* MIGRADAS Y FUNCIONALES */}
