@@ -12,13 +12,34 @@ const api = axios.create({
     },
 });
 
+// ---- Indicador de carga global ----
+// Cuenta peticiones activas y avisa a los suscriptores (ver GlobalLoading.jsx).
+let activeRequests = 0;
+const loadingListeners = new Set();
+const emitLoading = () => {
+    const isLoading = activeRequests > 0;
+    loadingListeners.forEach((fn) => fn(isLoading));
+};
+const startRequest = () => { activeRequests += 1; emitLoading(); };
+const endRequest = () => { activeRequests = Math.max(0, activeRequests - 1); emitLoading(); };
+
+export const loadingBus = {
+    subscribe(fn) {
+        loadingListeners.add(fn);
+        fn(activeRequests > 0); // estado inicial
+        return () => loadingListeners.delete(fn);
+    },
+};
+
 // Interceptor para logging de requests
 api.interceptors.request.use(
     (config) => {
+        startRequest();
         console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`);
         return config;
     },
     (error) => {
+        endRequest();
         console.error('[API Request Error]', error);
         return Promise.reject(error);
     }
@@ -27,10 +48,12 @@ api.interceptors.request.use(
 // Interceptor para manejo de respuestas y errores
 api.interceptors.response.use(
     (response) => {
+        endRequest();
         console.log(`[API Response] ${response.config.url}`, response.status);
         return response;
     },
     (error) => {
+        endRequest();
         console.error('[API Response Error]', error.response || error);
 
         if (error.response) {

@@ -27,6 +27,7 @@ import Queues from './pages/Queues';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
+import GlobalLoading from './components/GlobalLoading';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -275,6 +276,7 @@ function App() {
   if (!user) {
     return (
       <ConfigProvider theme={macsaTheme}>
+        <GlobalLoading />
         <Login onLoginSuccess={handleLoginSuccess} />
       </ConfigProvider>
     );
@@ -283,6 +285,7 @@ function App() {
   // Si hay usuario, mostrar layout principal
   return (
     <ConfigProvider theme={macsaTheme}>
+      <GlobalLoading />
       <Router>
         <AppLayout user={user} onLogout={handleLogout} />
       </Router>
