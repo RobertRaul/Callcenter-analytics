@@ -204,7 +204,9 @@ const Reports = () => {
 
       // Realizar petición POST con imagen de gráfico
       const response = await axios.post(
-        `http://192.168.11.3:8000/api/reports/export/${reportType}/${format}?start_date=${startDate}&end_date=${endDate}`,
+
+        //`http://192.168.11.3:8000/api/reports/export/${reportType}/${format}?start_date=${startDate}&end_date=${endDate}`,
+       `https://metricas.macsalud.com/api/reports/export/${reportType}/${format}?start_date=${startDate}&end_date=${endDate}`,
         { chart_image: chartImage },
         {
           responseType: 'blob',

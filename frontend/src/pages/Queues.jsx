@@ -307,6 +307,7 @@ const Queues = () => {
             columns={tableColumns}
             dataSource={queuesStats}
             rowKey="queue_name"
+            scroll={{ x: 'max-content' }}
             locale={{
               emptyText: 'No hay estadísticas disponibles para el período seleccionado'
             }}

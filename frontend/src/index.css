@@ -23,3 +23,97 @@ code {
 #root {
   min-height: 100vh;
 }
+
+/* ===================== Indicador de carga global ===================== */
+
+/* Barra de progreso superior (indeterminada) */
+.cca-loadbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(33, 150, 243, 0.15);
+  z-index: 2000;
+  overflow: hidden;
+}
+.cca-loadbar::before {
+  content: "";
+  position: absolute;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, #2196F3, #D4AF37);
+  animation: cca-slide 1s infinite ease-in-out;
+}
+@keyframes cca-slide {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+
+/* Badge "Cargando..." centrado, no bloqueante */
+.cca-loadbadge {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 2000;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.cca-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  animation: cca-spin 0.7s linear infinite;
+}
+@keyframes cca-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===================== Responsive / Movil ===================== */
+
+/* Evitar scroll horizontal de toda la pagina */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Las tablas tienen su PROPIO scroll horizontal: no rompen el layout en movil */
+.ant-table-content,
+.ant-table-body {
+  overflow-x: auto !important;
+}
+
+/* En pantallas chicas, compactar tarjetas y tipografia para aprovechar el ancho */
+@media (max-width: 575px) {
+  .ant-card-body {
+    padding: 12px !important;
+  }
+
+  /* Tabs y filtros que se salen */
+  .ant-tabs-nav {
+    margin-bottom: 8px !important;
+  }
+
+  /* Titulos un poco mas pequenos */
+  h3.ant-typography,
+  .ant-typography h3 {
+    font-size: 18px !important;
+  }
+
+  /* RangePicker y controles a ancho completo */
+  .ant-picker {
+    width: 100% !important;
+  }
+}

@@ -2,228 +2,213 @@
 
 Sistema de analítica y reportería en tiempo real para Call Center basado en Issabel 4.
 
-## Descripción General
+## 📋 Descripción General
 
-Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agentes para plataformas Issabel 4. Extrae datos directamente del archivo `queue_log` de Asterisk y presenta la información a través de una interfaz intuitiva con dashboards, reportes y exportación a Excel/PDF.
+Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agentes para plataformas Issabel 4. Extrae datos del `queue_log` de Asterisk (MySQL o archivo) y presenta la información a través de una interfaz intuitiva con dashboards interactivos, análisis ejecutivo y exportación a Excel/PDF.
 
-## Arquitectura del Sistema
+---
+
+## 🏗️ Arquitectura del Sistema
 
 ### Stack Tecnológico
 
 **Backend:**
-- FastAPI (Python 3.8+)
-- Pydantic para validación
-- PyMySQL para conexión MySQL (opcional)
-- Parser personalizado de queue_log
-- ReportLab y OpenPyXL para exportación
+- **FastAPI** 0.104.1 (Python 3.8+)
+- **PyMySQL** 1.1.0 - Conexión a MySQL
+- **Pydantic** 2.5.0 - Validación de datos
+- **Uvicorn** 0.24.0 - Servidor ASGI
+- **ReportLab** 3.6.13 - Generación de PDFs
+- **OpenPyXL** 3.1.5 - Generación de Excel
+- **python-jose** 3.3.0 - JWT authentication
+- **bcrypt** 3.2.2 - Hash de contraseñas
 
 **Frontend:**
-- React 18.2
-- Material-UI (MUI) 5.14
-- React Router 6.20
-- Axios para HTTP
-- Recharts para gráficos
+- **React** 18.2.0
+- **Ant Design** 5.29.3 (UI Framework)
+- **React Router** 6.20.0
+- **Axios** 1.6.2 - Cliente HTTP
+- **Chart.js** 4.5.1 + react-chartjs-2 - Gráficos
+- **dayjs** 1.11.19 - Manejo de fechas
+- **html2canvas** 1.4.1 - Captura de gráficos
+
+**Deployment:**
+- **Systemd** - Servicio del backend
+- **Nginx** - Reverse proxy + servidor estático
+- **Ubuntu Server** - Sistema operativo
 
 ### Arquitectura General
 
 ```
-┌─────────────────┐         ┌──────────────────┐         ┌─────────────────┐
-│  Frontend       │         │    Backend       │         │   Issabel 4     │
-│  React + MUI    │◄────────┤   FastAPI        │◄────────┤  Asterisk       │
-│  Port: 3000     │  HTTP   │   Port: 8000     │  Parse  │  queue_log      │
-└─────────────────┘         └──────────────────┘         └─────────────────┘
+┌─────────────────────┐         ┌────────────────────┐         ┌─────────────────────┐
+│   Frontend          │         │     Backend        │         │   Issabel Server    │
+│   React + Ant       │◄────────┤   FastAPI          │◄────────┤   (192.168.3.2)     │
+│   Design            │  HTTP   │   Port: 8000       │  MySQL  │   queue_log DB      │
+│   Port: 80          │         │   + REST API       │  + SSH  │   + Recordings      │
+└─────────────────────┘         └────────────────────┘         └─────────────────────┘
+       │                                  │
+       │                                  │
+       └──────────────────────────────────┘
+         http://192.168.11.3
 ```
 
-## Estructura del Proyecto
+---
+
+## 📁 Estructura del Proyecto
 
 ```
 /opt/callcenter-analytics/
 ├── backend/
 │   ├── src/
 │   │   ├── config/
-│   │   │   ├── settings.py          # Configuración general
-│   │   │   └── database.py          # Conexión MySQL (opcional)
+│   │   │   ├── settings.py          # Configuración global
+│   │   │   └── database.py          # Conexión MySQL
 │   │   ├── controllers/
 │   │   │   ├── calls_controller.py  # Lógica de llamadas
 │   │   │   ├── agents_controller.py # Lógica de agentes
 │   │   │   └── queues_controller.py # Lógica de colas
 │   │   ├── routes/
-│   │   │   ├── calls_routes.py      # Endpoints de llamadas
-│   │   │   ├── agents_routes.py     # Endpoints de agentes
-│   │   │   ├── queues_routes.py     # Endpoints de colas
-│   │   │   ├── reports_routes.py    # Endpoints de reportes
-│   │   │   ├── recordings_routes.py # Endpoints de grabaciones
-│   │   │   ├── auth_routes.py       # Autenticación JWT
-│   │   │   └── users_routes.py      # Gestión de usuarios
+│   │   │   ├── calls_routes.py      # 6 endpoints de llamadas
+│   │   │   ├── agents_routes.py     # 7 endpoints de agentes
+│   │   │   ├── queues_routes.py     # 5 endpoints de colas
+│   │   │   ├── reports_routes.py    # 4 endpoints de reportes
+│   │   │   ├── recordings_routes.py # 5 endpoints de grabaciones
+│   │   │   ├── auth_routes.py       # 2 endpoints de autenticación
+│   │   │   ├── users_routes.py      # 4 endpoints de usuarios
+│   │   │   └── analisis_routes.py   # 7 endpoints de análisis ejecutivo
 │   │   ├── services/
-│   │   │   └── reports_service.py   # Generación Excel/PDF
+│   │   │   ├── auth_service.py         # Autenticación JWT + bcrypt
+│   │   │   ├── reports_service.py      # Generación Excel/PDF con branding
+│   │   │   ├── recordings_service.py   # Acceso a grabaciones vía SSH/SCP
+│   │   │   └── optimized_stats_service.py  # Queries optimizadas con vistas MySQL
 │   │   ├── utils/
-│   │   │   └── queue_log_parser.py  # Parser de queue_log
+│   │   │   └── queue_log_parser.py  # Parser dual (MySQL + archivo)
 │   │   ├── models/
-│   │   │   └── user.py              # Modelos de datos
-│   │   └── main.py                  # Punto de entrada
-│   └── requirements.txt
+│   │   │   └── schemas.py           # Pydantic schemas
+│   │   └── main.py                  # Punto de entrada FastAPI
+│   ├── migrations/
+│   │   ├── 001_performance_optimization.sql  # Vistas MySQL + índices
+│   │   └── deploy.sh                          # Script de deployment
+│   ├── requirements.txt             # Dependencias Python
+│   ├── venv/                        # Entorno virtual
+│   └── users.db                     # Base de datos SQLite local
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   └── Dashboard.jsx        # Dashboard principal
+│   │   │   ├── Dashboard.jsx        # Dashboard principal
+│   │   │   └── charts/              # Componentes de gráficos Chart.js
+│   │   │       ├── BarChartComponent.jsx
+│   │   │       ├── DoughnutChartComponent.jsx
+│   │   │       └── LineChartComponent.jsx
 │   │   ├── pages/
 │   │   │   ├── Calls.jsx            # Vista de llamadas
 │   │   │   ├── Agents.jsx           # Vista de agentes
 │   │   │   ├── Queues.jsx           # Vista de colas
 │   │   │   ├── Reports.jsx          # Vista de reportes
-│   │   │   ├── Users.jsx            # Gestión de usuarios
-│   │   │   └── Login.jsx            # Inicio de sesión
+│   │   │   ├── Users.jsx            # Gestión de usuarios (admin)
+│   │   │   ├── Login.jsx            # Autenticación
+│   │   │   └── Analisis/            # 7 módulos de análisis ejecutivo
+│   │   │       ├── Analisis.jsx     # Navegación principal
+│   │   │       ├── DashboardEjecutivo.jsx
+│   │   │       ├── ComparativaPeriodos.jsx
+│   │   │       ├── PatronesHorarios.jsx
+│   │   │       ├── RankingAgentes.jsx
+│   │   │       ├── AnalisisAbandono.jsx
+│   │   │       ├── MapaCalorSemanal.jsx
+│   │   │       └── SLACumplimiento.jsx
 │   │   ├── services/
-│   │   │   └── api.js               # Cliente HTTP Axios
-│   │   ├── App.jsx                  # Componente raíz
+│   │   │   └── api.js               # Cliente Axios + endpoints API
+│   │   ├── config/
+│   │   │   ├── theme.js             # Tema MACSA (colores corporativos)
+│   │   │   └── chartDefaults.js     # Configuración Chart.js
+│   │   ├── App.jsx                  # Router + layout responsive
 │   │   └── index.js                 # Punto de entrada
-│   └── package.json
+│   ├── build/                       # Build de producción
+│   ├── package.json
+│   └── .env                         # REACT_APP_API_URL=/api
 │
-└── README.md
+├── README.md                        # Este archivo
+├── CLAUDE.md                        # Documentación para Claude Code
+├── SOLUTION_PERFORMANCE.md          # Optimizaciones implementadas
+└── CLEANUP_REPORT.md                # Reporte de análisis de código
 ```
 
-## Características Principales
+---
+
+## ✨ Características Principales
 
 ### 1. Dashboard en Tiempo Real
-- Resumen de llamadas (total, contestadas, abandonadas)
-- Métricas de rendimiento de colas
-- Estado de agentes en tiempo real
-- Distribución horaria de llamadas
-- Gráficos interactivos
+- Resumen de llamadas (total, contestadas, abandonadas, tasa de respuesta)
+- Distribución horaria con gráficos interactivos
+- Tarjetas de estadísticas con tendencias vs día anterior
+- Auto-refresh cada 30 segundos (configurable)
+- Selector de fecha para análisis histórico
 
 ### 2. Gestión de Llamadas
-- **Lista completa** con filtros por fecha
-- **Detalles por llamada**: número, agente, cola, tiempos
-- **Reproductor de grabaciones** integrado
-- **Descarga de audio** de llamadas
+- **Lista completa** con filtros por fecha y cola
+- **Detalles por llamada:** número, agente, cola, tiempos (espera/conversación)
+- **Reproductor de grabaciones** integrado (streaming de audio)
+- **Descarga de audio** (conversión automática GSM→WAV)
 - **Filtrado automático** de extensiones internas
-- **Paginación** de resultados
+- **Paginación** de resultados (hasta 1000 llamadas)
+- **Agrupación por agente** con estadísticas
 
-### 3. Análisis por Agente
-- Llamadas totales y completadas por agente
-- Tiempo total de conversación
-- Promedio de duración
-- Historial de últimas llamadas
-- **Traducción de eventos** a español (ej: CONNECT → "Conectada")
+### 3. Análisis de Agentes
+- Estadísticas completas por agente (llamadas, tiempos, promedios)
+- Historial de últimas llamadas con detalles
+- Performance por cola
+- Performance horaria
+- Comparación entre agentes con ranking
+- Estado en tiempo real (disponible, en llamada, pausado)
+- Traducción automática de eventos a español
 
 ### 4. Gestión de Colas
-- Estadísticas por cola
-- Tasa de respuesta y nivel de servicio
-- Tiempo promedio de espera
+- Estadísticas detalladas por cola
+- Tasa de respuesta y nivel de servicio (SLA)
+- Tiempo promedio de espera y conversación
 - Llamadas contestadas vs abandonadas
-- Distribución temporal
+- Performance por hora del día
+- Timeline de eventos
+- Estado en tiempo real (llamadas en espera, agentes disponibles)
 
-### 5. Reportes Avanzados
-- **Resumen diario** de llamadas
-- **Distribución por hora** del día
-- **Eventos del sistema** traducidos
-- **Top 5 agentes** por rendimiento
-- **Exportación** a Excel y PDF
-- **Filtros personalizables** por fecha
+### 5. Análisis Ejecutivo Avanzado
+- **Dashboard Ejecutivo:** KPIs del día con agente estrella y hora pico
+- **Comparativa de Períodos:** Comparación detallada entre dos períodos con tendencias
+- **Patrones Horarios:** Top 3 horas pico, días críticos, recomendaciones automáticas
+- **Ranking de Agentes:** Gamificación con medallas (oro/plata/bronce), top performers
+- **Análisis de Abandono:** Distribución horaria, patrones por cola, correlaciones
+- **Mapa de Calor Semanal:** Grid 7×24 horas con períodos de alta/baja demanda
+- **SLA y Cumplimiento:** % de llamadas respondidas < umbral, cumplimiento por cola
 
-### 6. Sistema de Autenticación
-- Login con JWT
-- Roles y permisos granulares
-- Gestión de usuarios (admin)
-- Sesiones persistentes
+### 6. Reportes Profesionales
+- **Exportación a Excel:** Reportes con branding MACSA, gráficos integrados, formato condicional
+- **Exportación a PDF:** Diseño profesional con logo, tablas styled, marca de agua
+- **Tipos de reporte:** General, Agentes, Colas, Resumen Diario, Eventos del Sistema
+- **Captura de gráficos:** Los gráficos del frontend se incluyen en los reportes
+- **Filtros personalizables:** Rango de fechas, colas específicas
 
-## Funcionamiento Técnico
+### 7. Sistema de Autenticación
+- **Login JWT** con tokens de larga duración (8 horas)
+- **Hash bcrypt** para contraseñas
+- **Roles y permisos granulares:** dashboard, calls, queues, agents, reports, admin
+- **Gestión de usuarios:** CRUD completo (solo admin)
+- **Usuario por defecto:** admin / admin123
+- **Sesiones persistentes** con localStorage
 
-### Parser de queue_log
+---
 
-El componente central es `queue_log_parser.py` que lee directamente el archivo `/var/log/asterisk/queue_log`:
-
-**Formato del archivo:**
-```
-timestamp|callid|queue|agent|event|data1|data2|data3|data4|data5
-```
-
-**Eventos principales:**
-- `ENTERQUEUE`: Llamada entra a cola
-- `CONNECT`: Agente contesta
-- `COMPLETEAGENT`: Agente finaliza llamada
-- `COMPLETECALLER`: Cliente cuelga
-- `ABANDON`: Cliente abandona antes de ser atendido
-- `EXITWITHTIMEOUT`: Timeout en cola
-
-**Proceso:**
-1. Lee archivo línea por línea
-2. Parsea campos según formato pipe-delimited
-3. Filtra por rango de fechas
-4. Agrupa eventos por callid
-5. Calcula métricas (tiempos de espera, conversación, etc.)
-
-### API REST (FastAPI)
-
-**Endpoints principales:**
-
-```
-GET  /                                    # Info de la API
-GET  /health                              # Health check
-GET  /api/dashboard/summary               # Dashboard principal
-
-# Llamadas
-GET  /api/calls/list                      # Lista de llamadas
-GET  /api/calls/statistics                # Estadísticas generales
-GET  /api/calls/by-agent                  # Llamadas por agente
-GET  /api/calls/daily-summary             # Resumen diario
-GET  /api/calls/hourly-distribution       # Distribución horaria
-GET  /api/calls/disposition-summary       # Resumen por evento
-
-# Colas
-GET  /api/queues/list                     # Lista de colas
-GET  /api/queues/statistics               # Estadísticas por cola
-GET  /api/queues/realtime                 # Estado en tiempo real
-
-# Agentes
-GET  /api/agents/list                     # Lista de agentes
-GET  /api/agents/statistics               # Estadísticas por agente
-GET  /api/agents/comparison               # Comparación de agentes
-
-# Grabaciones
-GET  /api/recordings/stream/{callid}      # Stream de audio
-GET  /api/recordings/download/{callid}    # Descarga de audio
-
-# Reportes
-GET  /api/reports/export/{type}/{format}  # Exportar (excel/pdf)
-
-# Autenticación
-POST /api/auth/login                      # Login
-POST /api/auth/refresh                    # Refresh token
-
-# Usuarios (admin)
-GET  /api/users                           # Lista usuarios
-POST /api/users                           # Crear usuario
-PUT  /api/users/{id}                      # Actualizar usuario
-```
-
-### Frontend React
-
-**Flujo de datos:**
-1. Componente hace petición HTTP via Axios
-2. API retorna JSON
-3. React actualiza estado local
-4. MUI renderiza componentes visuales
-
-**Características especiales:**
-- **Traductor de eventos**: Función `getEventText()` que convierte eventos técnicos a español
-- **Paginación cliente**: Manejo de grandes datasets
-- **Reproductor inline**: Audio player integrado en tabla
-- **Exportación**: Botones directos a endpoints de exportación
-
-## Instalación y Despliegue
+## 🛠️ Instalación y Configuración
 
 ### Requisitos Previos
 
-- **Sistema Operativo**: Linux (probado en CentOS/Rocky Linux)
-- **Python**: 3.8 o superior
-- **Node.js**: 14 o superior
-- **Issabel 4**: Con queue_log activo
-- **Acceso**: Lectura a `/var/log/asterisk/queue_log`
+- **Sistema Operativo:** Linux (Ubuntu Server 20.04+ recomendado)
+- **Python:** 3.8 o superior
+- **Node.js:** 14 o superior con npm
+- **MySQL:** Acceso al servidor Issabel con base de datos `asteriskcdrdb`
+- **SSH:** Acceso root al servidor Issabel (para grabaciones)
+- **Permisos:** Acceso de lectura a `/var/log/asterisk/queue_log` (si modo archivo)
 
-### Instalación Backend
+### Instalación del Backend
 
 ```bash
 # 1. Navegar al directorio del backend
@@ -244,7 +229,7 @@ nano .env
 nano src/config/settings.py
 # Ajustar: DB_HOST, DB_USER, DB_PASSWORD, CORS_ORIGINS
 
-# 6. Ejecutar servidor
+# 6. Ejecutar servidor de desarrollo
 cd src
 python main.py
 ```
@@ -255,7 +240,7 @@ El backend estará disponible en: `http://192.168.11.3:8000`
 - Swagger UI: `http://192.168.11.3:8000/docs`
 - ReDoc: `http://192.168.11.3:8000/redoc`
 
-### Instalación Frontend
+### Instalación del Frontend
 
 ```bash
 # 1. Navegar al directorio del frontend
@@ -265,8 +250,8 @@ cd /opt/callcenter-analytics/frontend
 npm install
 
 # 3. Configurar API endpoint
-nano src/services/api.js
-# Verificar baseURL: 'http://192.168.11.3:8000'
+nano .env
+# Verificar: REACT_APP_API_URL=/api
 
 # 4. Modo desarrollo
 npm start
@@ -277,15 +262,18 @@ npm run build
 # Genera archivos en ./build/
 ```
 
-### Despliegue en Producción
+---
 
-#### Opción 1: Systemd Services
+## 🚀 Deployment en Producción
 
-**Backend Service** (`/etc/systemd/system/callcenter-api.service`):
+### Backend: Systemd Service
+
+Crear archivo `/etc/systemd/system/callcenter-api.service`:
+
 ```ini
 [Unit]
-Description=Call Center Analytics API
-After=network.target
+Description=Call Center Analytics API - FastAPI Backend
+After=network.target mysql.service
 
 [Service]
 Type=simple
@@ -294,117 +282,329 @@ WorkingDirectory=/opt/callcenter-analytics/backend/src
 Environment="PATH=/opt/callcenter-analytics/backend/venv/bin"
 ExecStart=/opt/callcenter-analytics/backend/venv/bin/python main.py
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Frontend con Nginx** (`/etc/nginx/conf.d/callcenter.conf`):
+**Comandos:**
+```bash
+# Activar y ejecutar servicio
+systemctl daemon-reload
+systemctl enable callcenter-api
+systemctl start callcenter-api
+
+# Verificar estado
+systemctl status callcenter-api
+
+# Ver logs en tiempo real
+journalctl -u callcenter-api -f
+```
+
+### Frontend: Nginx
+
+Crear archivo `/etc/nginx/conf.d/callcenter.conf`:
+
 ```nginx
 server {
     listen 80;
-    server_name 192.168.11.3;
+    server_name 192.168.11.3 metricas.macsalud.com;
 
     root /opt/callcenter-analytics/frontend/build;
     index index.html;
 
+    # Frontend SPA
     location / {
         try_files $uri $uri/ /index.html;
     }
 
+    # Cache agresivo para index.html (siempre recargar)
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+
+    # Cache largo para assets estáticos
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Proxy al backend FastAPI
     location /api {
         proxy_pass http://localhost:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Documentación de API
+    location ~ ^/(docs|redoc|openapi.json) {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
     }
 }
 ```
 
 **Comandos:**
 ```bash
-# Iniciar servicios
-systemctl daemon-reload
-systemctl enable callcenter-api
-systemctl start callcenter-api
-systemctl restart nginx
+# Activar configuración
+nginx -t
+systemctl reload nginx
 
-# Verificar estado
-systemctl status callcenter-api
-systemctl status nginx
+# Ver logs
+tail -f /var/log/nginx/access.log
+tail -f /var/log/nginx/error.log
 ```
 
-#### Opción 2: Docker (futuro)
-
-```dockerfile
-# Dockerfile backend
-FROM python:3.8-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY src/ .
-CMD ["python", "main.py"]
-```
-
-### Permisos del Sistema
+### Proceso de Actualización
 
 ```bash
-# Dar acceso de lectura a queue_log
-chmod 644 /var/log/asterisk/queue_log
+# Backend
+cd /opt/callcenter-analytics/backend
+git pull origin main
+source venv/bin/activate
+pip install -r requirements.txt
+systemctl restart callcenter-api
 
-# Si el servicio corre como usuario específico
-chown asterisk:asterisk /var/log/asterisk/queue_log
-usermod -aG asterisk callcenter-user
+# Frontend
+cd /opt/callcenter-analytics/frontend
+git pull origin main
+npm install
+npm run build
+systemctl reload nginx
 ```
 
-## Configuración
+---
 
-### Backend (settings.py)
+## ⚙️ Configuración
+
+### Variables de Entorno Backend
+
+Editar `/opt/callcenter-analytics/backend/src/config/settings.py`:
 
 ```python
-# Base de datos Issabel
-DB_HOST = "192.168.3.2"          # IP del servidor Issabel
-DB_USER = "reportes"              # Usuario MySQL
-DB_PASSWORD = "issabel"           # Contraseña
-DB_NAME_CDR = "asteriskcdrdb"     # Base de datos CDR
-DB_NAME_ASTERISK = "asterisk"     # Base de datos Asterisk
+# Servidor Issabel MySQL
+DB_HOST = "192.168.3.2"
+DB_PORT = 3306
+DB_USER_QUEUELOG = "asteriskuser"
+DB_PASSWORD_QUEUELOG = "aul"
+DB_NAME_CDR = "asteriskcdrdb"
 
-# Servidor API
-SERVER_HOST = "0.0.0.0"           # Escucha en todas las interfaces
-SERVER_PORT = 8000                # Puerto del API
+# API Server
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8000
 
-# CORS (agregar IPs permitidas)
+# CORS (añadir dominios permitidos)
 CORS_ORIGINS = [
+    "http://metricas.macsalud.com",
+    "http://www.metricas.macsalud.com",
     "http://localhost:3000",
     "http://192.168.11.3",
-    "http://192.168.11.3:3000"
 ]
 
 # JWT
-SECRET_KEY = "cambiar-en-produccion"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 horas
+SECRET_KEY = "cambiar-en-produccion-a-clave-segura"
+ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 ```
 
-### Frontend (api.js)
+### Variables de Entorno Frontend
 
-```javascript
-const API_BASE_URL = 'http://192.168.11.3:8000';
+Editar `/opt/callcenter-analytics/frontend/.env`:
+
+```bash
+REACT_APP_API_URL=/api
 ```
 
-## Usuarios y Permisos
+---
+
+## 🔧 Funcionamiento Técnico
+
+### Parser de queue_log (Dual-Mode)
+
+El sistema tiene **dos modos de operación**:
+
+**1. Modo MySQL (Prioritario):**
+- Conecta a `asteriskcdrdb.queue_log` en servidor Issabel (192.168.3.2)
+- Datos sincronizados por daemon `queue-log-sync.service`
+- Índices y vistas optimizadas para queries ultrarrápidas
+- Queries de 12 minutos → <1 segundo
+
+**2. Modo Archivo (Fallback):**
+- Lee directamente `/var/log/asterisk/queue_log`
+- Se activa automáticamente si MySQL no disponible
+- Compatible con queue_log rotado
+
+**Eventos principales parseados:**
+- `ENTERQUEUE` - Llamada entra a cola
+- `CONNECT` - Agente contesta llamada
+- `COMPLETEAGENT` - Agente finaliza llamada
+- `COMPLETECALLER` - Cliente cuelga
+- `ABANDON` - Cliente abandona antes de ser atendido
+- `EXITWITHTIMEOUT` - Timeout en cola
+
+### Optimizaciones de Performance
+
+El sistema implementa **vistas MySQL pre-agregadas** que mejoran el rendimiento dramáticamente:
+
+| Métrica | Antes | Después | Mejora |
+|---------|-------|---------|--------|
+| Tiempo de query | 12+ minutos | <1 segundo | **700x más rápido** |
+| Memoria usada | 2.8 GB | <100 MB | **96% reducción** |
+| Registros leídos | 7.4M | <1000 | **7400x menos** |
+
+**Vistas implementadas:**
+- `v_daily_call_summary` - Resumen diario por cola (180 días)
+- `v_hourly_call_distribution` - Distribución horaria (90 días)
+- `v_queue_statistics` - Estadísticas por cola (180 días)
+- `v_agent_statistics` - Estadísticas por agente (180 días)
+- `v_call_events_summary` - Conteo de eventos (90 días)
+
+Para aplicar las optimizaciones:
+```bash
+cd /opt/callcenter-analytics/backend/migrations
+./deploy.sh
+```
+
+### Sistema de Grabaciones
+
+Las grabaciones de audio se almacenan en el servidor Issabel:
+
+**Ubicación:** `/var/spool/asterisk/monitor/YYYY/MM/DD/`
+
+**Formato:** `exten-{ext}-{phone}-{date}-{time}-{callid}.wav` o `.gsm`
+
+**Características:**
+- Acceso remoto vía SSH/SCP al servidor Issabel
+- Conversión automática GSM → WAV (compatible con navegadores)
+- Sistema de caché local (1 hora de validez)
+- Streaming de audio para reproducción inline
+- Descarga directa de archivos
+
+**Configuración SSH:**
+```python
+# En recordings_service.py
+SSH_HOST = "192.168.3.2"
+SSH_USER = "root"
+SSH_PASSWORD = "m4cs4l4d"
+RECORDINGS_PATH = "/var/spool/asterisk/monitor"
+```
+
+---
+
+## 📊 API REST - Endpoints Principales
+
+### Autenticación
+```
+POST   /api/auth/login           # Login JWT
+GET    /api/auth/me              # Usuario actual
+```
+
+### Llamadas (6 endpoints)
+```
+GET    /api/calls/statistics          # Estadísticas generales
+GET    /api/calls/list                # Lista con filtros
+GET    /api/calls/hourly-distribution # Distribución horaria
+GET    /api/calls/daily-summary       # Resumen diario
+GET    /api/calls/disposition-summary # Resumen por evento
+GET    /api/calls/by-agent            # Agrupadas por agente
+```
+
+### Colas (5 endpoints)
+```
+GET    /api/queues/list                # Lista de colas
+GET    /api/queues/statistics          # Estadísticas por cola
+GET    /api/queues/events/{name}       # Timeline de eventos
+GET    /api/queues/performance-by-hour # Performance horaria
+GET    /api/queues/realtime            # Estado en tiempo real
+```
+
+### Agentes (7 endpoints)
+```
+GET    /api/agents/list                          # Lista de agentes
+GET    /api/agents/statistics                    # Estadísticas por agente
+GET    /api/agents/{agent}/performance-by-queue  # Performance por cola
+GET    /api/agents/hourly-performance            # Performance horaria
+GET    /api/agents/{agent}/call-history          # Historial de llamadas
+GET    /api/agents/realtime                      # Estado en tiempo real
+GET    /api/agents/comparison                    # Comparación entre agentes
+```
+
+### Grabaciones (5 endpoints)
+```
+GET    /api/recordings/check/{callid}      # Verificar existencia
+GET    /api/recordings/stream/{callid}     # Stream de audio
+GET    /api/recordings/download/{callid}   # Descarga
+GET    /api/recordings/list                # Lista por fecha
+POST   /api/recordings/cleanup-cache       # Limpiar caché
+```
+
+### Reportes (4 endpoints)
+```
+POST   /api/reports/export/general/{format}  # Excel/PDF general
+POST   /api/reports/export/agents/{format}   # Excel/PDF agentes
+POST   /api/reports/export/queues/{format}   # Excel/PDF colas
+POST   /api/reports/export/calls/{format}    # Excel/PDF llamadas
+```
+
+### Análisis Ejecutivo (7 endpoints)
+```
+GET    /api/analisis/dashboard-ejecutivo     # Dashboard ejecutivo
+GET    /api/analisis/comparativa-periodos    # Comparación de períodos
+GET    /api/analisis/patrones-horarios       # Análisis de patrones
+GET    /api/analisis/ranking-agentes         # Ranking con gamificación
+GET    /api/analisis/analisis-abandono       # Análisis de abandonos
+GET    /api/analisis/mapa-calor-semanal      # Mapa de calor 7×24
+GET    /api/analisis/sla-cumplimiento        # Análisis de SLA
+```
+
+### Usuarios (4 endpoints - Solo Admin)
+```
+GET    /api/users/list           # Lista usuarios
+POST   /api/users/create         # Crear usuario
+PUT    /api/users/update/{id}    # Actualizar usuario
+DELETE /api/users/delete/{id}    # Eliminar usuario
+```
+
+### Utilidades
+```
+GET    /                    # Info de la API
+GET    /health              # Health check
+GET    /api/dashboard/summary  # Resumen dashboard
+```
+
+**Total: 44 endpoints activos**
+
+---
+
+## 👥 Usuarios y Permisos
 
 ### Usuario por Defecto
-- **Username**: `admin`
-- **Password**: `admin123`
+- **Username:** `admin`
+- **Password:** `admin123`
+- **Permisos:** Todos habilitados
 
-### Permisos Disponibles
-- `dashboard`: Ver dashboard principal
-- `calls`: Ver llamadas
-- `queues`: Ver colas
-- `agents`: Ver agentes
-- `reports`: Ver y exportar reportes
-- `admin`: Gestión de usuarios
+### Sistema de Permisos
 
-## Solución de Problemas
+Cada usuario tiene flags granulares:
+
+```javascript
+{
+  dashboard: true,   // Ver dashboard principal
+  calls: true,       // Módulo de llamadas
+  queues: true,      // Módulo de colas
+  agents: true,      // Módulo de agentes
+  reports: true,     // Generar reportes
+  admin: false       // Gestión de usuarios (solo admin)
+}
+```
+
+---
+
+## 🐛 Solución de Problemas
 
 ### Backend no inicia
 
@@ -415,8 +615,12 @@ journalctl -u callcenter-api -f
 # Verificar acceso a queue_log
 ls -la /var/log/asterisk/queue_log
 
-# Probar conexión MySQL (si aplica)
-mysql -h 192.168.3.2 -u reportes -p
+# Probar conexión MySQL
+mysql -h 192.168.3.2 -u asteriskuser -paul asteriskcdrdb -e "SELECT COUNT(*) FROM queue_log;"
+
+# Verificar permisos
+sudo chown root:root /opt/callcenter-analytics/backend/users.db
+sudo chmod 644 /opt/callcenter-analytics/backend/users.db
 ```
 
 ### Frontend no muestra datos
@@ -425,86 +629,180 @@ mysql -h 192.168.3.2 -u reportes -p
 # Verificar que el backend esté corriendo
 curl http://192.168.11.3:8000/health
 
-# Verificar CORS en navegador (F12 → Console)
-# Verificar configuración de API_BASE_URL
+# Verificar CORS (revisar consola del navegador F12)
+# Verificar configuración de REACT_APP_API_URL
+
+# Limpiar caché del navegador o usar modo incognito
 ```
 
 ### No se ven grabaciones
 
 ```bash
-# Verificar que existan archivos de audio
-ls -la /var/spool/asterisk/monitor/
+# Verificar que existan archivos de audio en servidor Issabel
+ssh root@192.168.3.2 "ls -la /var/spool/asterisk/monitor/"
 
-# Verificar permisos
-chmod 644 /var/spool/asterisk/monitor/*.wav
+# Verificar SSH desde servidor de analytics
+sshpass -p 'm4cs4l4d' ssh root@192.168.3.2 "hostname"
+
+# Verificar dependencias
+which sshpass
+which ffmpeg
 ```
 
-## Mantenimiento
+### Queries lentas
+
+```bash
+# Aplicar migraciones de optimización
+cd /opt/callcenter-analytics/backend/migrations
+./deploy.sh
+
+# Verificar que las vistas existan
+mysql -h 192.168.3.2 -u asteriskuser -paul asteriskcdrdb -e "SHOW TABLES LIKE 'v_%';"
+
+# Ver logs para confirmar uso de vistas optimizadas
+journalctl -u callcenter-api | grep "OPTIMIZED"
+```
+
+---
+
+## 📝 Mantenimiento
 
 ### Logs del Sistema
 
 ```bash
 # Backend logs
 journalctl -u callcenter-api -f
+journalctl -u callcenter-api --since "1 hour ago"
 
 # Nginx logs
 tail -f /var/log/nginx/access.log
 tail -f /var/log/nginx/error.log
 
-# Queue log de Asterisk
-tail -f /var/log/asterisk/queue_log
+# Queue log de Asterisk (en servidor Issabel)
+ssh root@192.168.3.2 "tail -f /var/log/asterisk/queue_log"
 ```
 
-### Rotación de queue_log
-
-Issabel rota automáticamente el queue_log. Si necesitas acceso a logs históricos, considera:
+### Backup de Base de Datos
 
 ```bash
-# Archivar queue_log antiguo
-cp /var/log/asterisk/queue_log /opt/backups/queue_log.$(date +%Y%m%d)
+# Backup de usuarios (SQLite)
+cp /opt/callcenter-analytics/backend/users.db \
+   /opt/backups/users_$(date +%Y%m%d).db
 
-# O configurar logrotate
+# Backup de queue_log (MySQL - en servidor Issabel)
+ssh root@192.168.3.2 "mysqldump -u asteriskuser -paul asteriskcdrdb queue_log | gzip > /tmp/queue_log_backup.sql.gz"
+scp root@192.168.3.2:/tmp/queue_log_backup.sql.gz /opt/backups/
 ```
 
-## Desarrollo
+### Rotación de Logs
 
-### Agregar Nueva Funcionalidad
+Issabel rota automáticamente el `queue_log`. El parser maneja correctamente archivos rotados.
 
-1. **Backend**: Crear controller → route → registrar en main.py
-2. **Frontend**: Crear page/component → agregar route en App.jsx
-3. **Probar** con datos reales del queue_log
+### Limpieza de Caché de Grabaciones
 
-### Estructura de Respuestas API
-
-```json
-{
-  "success": true,
-  "data": {
-    "calls": [],
-    "total": 100
-  }
-}
+```bash
+# Limpiar grabaciones en caché mayores a 24 horas
+curl -X POST http://192.168.11.3:8000/api/recordings/cleanup-cache?max_age_hours=24
 ```
-
-## Roadmap
-
-- [ ] Dashboard con gráficos en tiempo real (WebSocket)
-- [ ] Alertas por email/SMS
-- [ ] Reportes programados
-- [ ] Integración con CRM
-- [ ] Aplicación móvil
-- [ ] Soporte multi-tenant
-
-## Licencia
-
-Proyecto interno de uso empresarial.
-
-## Soporte
-
-Para reportar problemas o solicitar funcionalidades, contactar al equipo de desarrollo.
 
 ---
 
-**Versión**: 1.0.0
-**Última actualización**: Noviembre 2025
-**Desarrollado para**: Issabel 4 / Asterisk
+## 📚 Documentación Adicional
+
+- **CLAUDE.md:** Guía completa para Claude Code (desarrollo asistido)
+- **SOLUTION_PERFORMANCE.md:** Detalles de optimizaciones de performance
+- **CLEANUP_REPORT.md:** Análisis de código muerto y limpieza
+- **Swagger UI:** http://192.168.11.3:8000/docs (documentación interactiva)
+- **ReDoc:** http://192.168.11.3:8000/redoc (documentación alternativa)
+
+---
+
+## 🔄 Integración con Issabel
+
+### Conexiones Requeridas
+
+**MySQL (asteriskcdrdb):**
+- Host: 192.168.3.2
+- Puerto: 3306
+- Usuario: asteriskuser
+- Password: aul
+- Base de datos: asteriskcdrdb
+- Tabla principal: queue_log
+
+**SSH (para grabaciones):**
+- Host: 192.168.3.2
+- Usuario: root
+- Password: m4cs4l4d
+- Ruta grabaciones: /var/spool/asterisk/monitor/
+
+**Daemon de sincronización (en servidor Issabel):**
+- Servicio: queue-log-sync.service
+- Script: /usr/local/bin/queue_log_sync.py
+- Función: Sincronizar queue_log (archivo → MySQL) en tiempo real
+
+---
+
+## 🎨 Branding MACSA
+
+El sistema usa los colores corporativos de MACSA:
+
+```javascript
+MACSA_COLORS = {
+  blue: '#2196F3',    // Azul corporativo (principal)
+  gold: '#D4AF37',    // Dorado (acentos)
+  gray: '#9E9E9E',    // Gris (complementario)
+  green: '#52C41A',   // Verde (éxito)
+  red: '#FF4D4F',     // Rojo (error/alerta)
+}
+```
+
+Los reportes Excel/PDF incluyen:
+- Logo MACSA (80×80px)
+- Colores corporativos en encabezados
+- Marca de agua "Clínica MACSA"
+- Formato profesional consistente
+
+---
+
+## 🚧 Roadmap Futuro
+
+- [ ] Dashboard con actualización WebSocket en tiempo real
+- [ ] Alertas por email/SMS configurables
+- [ ] Reportes programados automáticos
+- [ ] Integración con CRM externo
+- [ ] Aplicación móvil (React Native)
+- [ ] Soporte multi-tenant
+- [ ] Tests automatizados (pytest + jest)
+- [ ] CI/CD con GitHub Actions
+
+---
+
+## 📄 Licencia
+
+Proyecto interno de uso empresarial - Clínica MACSA.
+
+---
+
+## 👨‍💻 Soporte Técnico
+
+**Para reportar problemas o solicitar funcionalidades:**
+
+- Crear issue en repositorio interno
+- Contactar al equipo de desarrollo
+- Email: soporte-ti@macsalud.com
+
+---
+
+**Versión:** 1.0.0
+**Última actualización:** Mayo 2026
+**Desarrollado para:** Issabel 4 / Asterisk
+**Servidor:** http://metricas.macsalud.com
+
+---
+
+**🔗 Enlaces Rápidos:**
+- 🌐 **Frontend:** http://192.168.11.3
+- 📡 **API:** http://192.168.11.3:8000
+- 📖 **Docs:** http://192.168.11.3:8000/docs
+- 🔍 **ReDoc:** http://192.168.11.3:8000/redoc
+- 💚 **Health:** http://192.168.11.3:8000/health

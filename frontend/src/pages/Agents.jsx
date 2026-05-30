@@ -366,6 +366,7 @@ const Agents = () => {
             columns={tableColumns}
             dataSource={agentsStats}
             rowKey="agent"
+            scroll={{ x: 'max-content' }}
             locale={{
               emptyText: 'No hay estadísticas disponibles para el período seleccionado'
             }}

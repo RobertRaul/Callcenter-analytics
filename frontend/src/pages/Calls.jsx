@@ -307,6 +307,8 @@ const Calls = () => {
             dataSource={callsList}
             rowKey={(record, index) => `${record.callid}-${index}`}
             loading={loading}
+            scroll={{ x: 'max-content' }}
+            size="middle"
             locale={{
               emptyText: 'No hay llamadas en el rango de fechas seleccionado'
             }}

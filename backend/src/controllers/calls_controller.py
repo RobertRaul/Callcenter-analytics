@@ -1,10 +1,11 @@
 # controllers/calls_controller.py
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import List, Optional
 import logging
 from utils.queue_log_parser import queue_log_parser
 
 logger = logging.getLogger(__name__)
+
 
 class CallsController:
 
@@ -24,21 +25,28 @@ class CallsController:
                 logger.info("✓ Using OPTIMIZED service with MySQL views (fast queries)")
             else:
                 logger.warning("⚠ Optimized views not available, using legacy service (slow)")
-                logger.info("To enable fast queries, run: mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb < migrations/001_performance_optimization.sql")
+                logger.info(
+                    "To enable fast queries, run: mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb < migrations/001_performance_optimization.sql")
         except ImportError as e:
             logger.warning(f"Optimized service not available: {e}, using legacy service")
         except Exception as e:
             logger.warning(f"Error initializing optimized service: {e}, using legacy service")
 
     def get_calls_by_date_range(self, start_date: str, end_date: str,
-                                 queue: Optional[str] = None) -> List[dict]:
+                                queue: Optional[str] = None) -> List[dict]:
         """
         Obtiene todas las llamadas en un rango de fechas desde queue_log con información detallada
         """
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             # Leer registros del queue_log
             records = queue_log_parser.read_log(start_dt, end_dt, queue)
@@ -130,9 +138,9 @@ class CallsController:
         except Exception as e:
             logger.error(f"Error getting calls by date range: {e}", exc_info=True)
             return []
-    
+
     def get_call_statistics(self, start_date: str, end_date: str,
-                           queue: Optional[str] = None) -> dict:
+                            queue: Optional[str] = None) -> dict:
         """
         Obtiene estadísticas generales de llamadas desde queue_log
         Usa servicio optimizado si está disponible (MUCHO más rápido)
@@ -147,9 +155,15 @@ class CallsController:
 
         # Método legacy (LENTO - lee todos los registros)
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
@@ -173,7 +187,8 @@ class CallsController:
             for record in records:
                 if record['event'] == 'CONNECT' and record['data1'] and record['data1'].isdigit():
                     all_wait_times.append(int(record['data1']))
-                if record['event'] in ['COMPLETEAGENT', 'COMPLETECALLER'] and record['data2'] and record['data2'].isdigit():
+                if record['event'] in ['COMPLETEAGENT', 'COMPLETECALLER'] and record['data2'] and record[
+                    'data2'].isdigit():
                     all_talk_times.append(int(record['data2']))
 
             # Calcular estadísticas
@@ -208,7 +223,7 @@ class CallsController:
                 'avg_wait_time': 0,
                 'answer_rate': 0
             }
-    
+
     def get_hourly_distribution(self, start_date: str, end_date: str) -> List[dict]:
         """
         Distribución de llamadas por hora del día desde queue_log
@@ -224,9 +239,15 @@ class CallsController:
 
         # Método legacy (LENTO - lee todos los registros)
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
@@ -280,7 +301,7 @@ class CallsController:
         except Exception as e:
             logger.error(f"Error getting hourly distribution: {e}", exc_info=True)
             return []
-    
+
     def get_daily_summary(self, start_date: str, end_date: str) -> List[dict]:
         """
         Resumen diario de llamadas desde queue_log
@@ -296,9 +317,15 @@ class CallsController:
 
         # Método legacy (LENTO - lee todos los registros)
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
@@ -348,7 +375,7 @@ class CallsController:
         except Exception as e:
             logger.error(f"Error getting daily summary: {e}", exc_info=True)
             return []
-    
+
     def get_disposition_summary(self, start_date: str, end_date: str) -> List[dict]:
         """
         Resumen por tipo de evento desde queue_log
@@ -364,9 +391,15 @@ class CallsController:
 
         # Método legacy (LENTO - lee todos los registros)
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             logger.warning("⚠ Using LEGACY service - this may take several minutes with large datasets")
 
@@ -429,9 +462,15 @@ class CallsController:
         Obtiene llamadas agrupadas por agente con detalles completos
         """
         try:
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            start_dt = datetime.combine(
+                datetime.strptime(start_date, "%Y-%m-%d").date(),
+                time.min
+            )
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                time.max
+            )
+            #end_dt = end_dt.replace(hour=23, minute=59, second=59)
 
             records = queue_log_parser.read_log(start_dt, end_dt)
 
@@ -528,5 +567,6 @@ class CallsController:
                 'total_agents': 0,
                 'agents': []
             }
+
 
 calls_controller = CallsController()
