@@ -1,10 +1,9 @@
 // pages/Login.jsx - Diseño Premium con Colores MACSA
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, Alert, Typography, Space } from 'antd';
+import { Form, Input, Button, Card, Alert, Typography, Space, Modal, message } from 'antd';
 import { UserOutlined, LockOutlined, PhoneOutlined, BarChartOutlined } from '@ant-design/icons';
-import axios from 'axios';
 import { MACSA_COLORS } from '../config/theme';
-import api from '../services/api';
+import api, { authAPI } from '../services/api';
 
 const { Title, Text } = Typography;
 
@@ -12,29 +11,70 @@ const Login = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Cambio obligatorio de contraseña (primer ingreso / reseteo)
+  const [mustChange, setMustChange] = useState(false);
+  const [pendingUser, setPendingUser] = useState(null);
+  const [tempPassword, setTempPassword] = useState('');
+  const [changing, setChanging] = useState(false);
+
+  // Olvidé mi contraseña
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
   const handleSubmit = async (values) => {
     setError('');
     setLoading(true);
-
     try {
-//      const response = await axios.post('http://192.168.11.3:8000/api/auth/login', {
-
-	const response = await api.post('/auth/login', {
+      const response = await api.post('/auth/login', {
         username: values.username,
         password: values.password
       });
 
       const { access_token, user } = response.data;
-
-      // Guardar token y usuario
+      // Guardar token (necesario para llamar a change-password)
       localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
 
-      onLoginSuccess(user);
+      if (user.must_change_password) {
+        // No completar el login hasta que defina una nueva contraseña
+        setPendingUser(user);
+        setTempPassword(values.password);
+        setMustChange(true);
+      } else {
+        localStorage.setItem('user', JSON.stringify(user));
+        onLoginSuccess(user);
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForcedChange = async (values) => {
+    setChanging(true);
+    try {
+      await authAPI.changePassword(tempPassword, values.new_password);
+      const user = { ...pendingUser, must_change_password: false };
+      localStorage.setItem('user', JSON.stringify(user));
+      message.success('Contraseña actualizada. ¡Bienvenido!');
+      onLoginSuccess(user);
+    } catch (err) {
+      message.error(err.response?.data?.detail || 'No se pudo cambiar la contraseña');
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  const handleForgot = async (values) => {
+    setForgotLoading(true);
+    try {
+      const res = await authAPI.forgotPassword(values.email);
+      message.success(res.data?.message || 'Si el correo está registrado, se enviaron instrucciones.');
+      setForgotOpen(false);
+    } catch (err) {
+      message.error('No se pudo procesar la solicitud');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -358,6 +398,12 @@ const Login = ({ onLoginSuccess }) => {
                   {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
                 </Button>
               </Form.Item>
+
+              <div style={{ textAlign: 'center', marginTop: 16 }}>
+                <a onClick={() => setForgotOpen(true)} style={{ color: MACSA_COLORS.blue, fontSize: 14 }}>
+                  ¿Olvidaste tu contraseña?
+                </a>
+              </div>
             </Form>
 
             {/* Footer del formulario */}
@@ -389,6 +435,80 @@ const Login = ({ onLoginSuccess }) => {
           </div>
         </div>
       </div>
+
+      {/* Modal: cambio obligatorio de contraseña */}
+      <Modal
+        title="Cambia tu contraseña"
+        open={mustChange}
+        closable={false}
+        maskClosable={false}
+        keyboard={false}
+        footer={null}
+      >
+        <p style={{ marginBottom: 16 }}>
+          Por seguridad debes definir una nueva contraseña para continuar.
+        </p>
+        <Form layout="vertical" onFinish={handleForcedChange}>
+          <Form.Item
+            name="new_password"
+            label="Nueva contraseña"
+            hasFeedback
+            rules={[
+              { required: true, message: 'Ingresa la nueva contraseña' },
+              { min: 8, message: 'Mínimo 8 caracteres' },
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder="Nueva contraseña" />
+          </Form.Item>
+          <Form.Item
+            name="confirm"
+            label="Confirmar contraseña"
+            dependencies={['new_password']}
+            hasFeedback
+            rules={[
+              { required: true, message: 'Confirma la contraseña' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('new_password') === value) return Promise.resolve();
+                  return Promise.reject(new Error('Las contraseñas no coinciden'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder="Repite la contraseña" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block loading={changing}>
+            Guardar y continuar
+          </Button>
+        </Form>
+      </Modal>
+
+      {/* Modal: recuperar contraseña */}
+      <Modal
+        title="Recuperar contraseña"
+        open={forgotOpen}
+        onCancel={() => setForgotOpen(false)}
+        footer={null}
+      >
+        <p style={{ marginBottom: 16 }}>
+          Ingresa tu correo y, si está registrado, te enviaremos instrucciones de acceso.
+        </p>
+        <Form layout="vertical" onFinish={handleForgot}>
+          <Form.Item
+            name="email"
+            label="Correo"
+            rules={[
+              { required: true, message: 'Ingresa tu correo' },
+              { type: 'email', message: 'Correo inválido' },
+            ]}
+          >
+            <Input prefix={<UserOutlined />} placeholder="tu.correo@macsalud.com" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" block loading={forgotLoading}>
+            Enviar
+          </Button>
+        </Form>
+      </Modal>
     </div>
   );
 };

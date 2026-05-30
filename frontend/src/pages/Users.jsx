@@ -21,7 +21,8 @@ import {
   DeleteOutlined,
   UserOutlined,
   MailOutlined,
-  LockOutlined
+  LockOutlined,
+  KeyOutlined
 } from '@ant-design/icons';
 import { usersAPI } from '../services/api';
 import { MACSA_COLORS } from '../config/theme';
@@ -35,8 +36,13 @@ const Users = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [form] = Form.useForm();
 
+  // Configuración de envíos de reportes
+  const [cfgForm] = Form.useForm();
+  const [savingCfg, setSavingCfg] = useState(false);
+
   useEffect(() => {
     fetchUsers();
+    loadReportConfig();
   }, []);
 
   const fetchUsers = async () => {
@@ -51,11 +57,33 @@ const Users = () => {
     }
   };
 
+  const loadReportConfig = async () => {
+    try {
+      const res = await usersAPI.getReportConfig();
+      cfgForm.setFieldsValue(res.data.data || {});
+    } catch (error) {
+      // silencioso: si no es admin o falla, no bloquea la vista
+    }
+  };
+
+  const handleSaveConfig = async (values) => {
+    setSavingCfg(true);
+    try {
+      await usersAPI.saveReportConfig(values);
+      message.success('Configuración de envíos guardada');
+    } catch (error) {
+      message.error(error.response?.data?.detail || 'No se pudo guardar la configuración');
+    } finally {
+      setSavingCfg(false);
+    }
+  };
+
   const handleCreate = () => {
     setEditingUser(null);
     form.resetFields();
     form.setFieldsValue({
       is_active: true,
+      is_admin: false,
       access_dashboard: true,
       access_calls: true,
       access_queues: true,
@@ -90,6 +118,29 @@ const Users = () => {
     }
   };
 
+  const handleReset = async (user) => {
+    try {
+      const res = await usersAPI.resetPassword(user.id);
+      if (res.data?.email_sent) {
+        message.success(`Se envió una contraseña temporal a ${user.email}`);
+      } else {
+        Modal.info({
+          title: 'Contraseña restablecida',
+          content: (
+            <div>
+              <p>No se pudo enviar el correo. Entrega esta contraseña temporal al usuario:</p>
+              <p style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: 16 }}>
+                {res.data?.temp_password}
+              </p>
+            </div>
+          ),
+        });
+      }
+    } catch (error) {
+      message.error(error.response?.data?.detail || error.message || 'Error al restablecer la contraseña');
+    }
+  };
+
   const handleSubmit = async (values) => {
     try {
       if (editingUser) {
@@ -103,8 +154,24 @@ const Users = () => {
         await usersAPI.update(editingUser.id, payload);
         message.success('Usuario actualizado correctamente');
       } else {
-        await usersAPI.create(values);
-        message.success('Usuario creado correctamente');
+        const res = await usersAPI.create(values);
+        if (res.data?.email_sent) {
+          message.success('Usuario creado. Se envió la contraseña temporal por correo.');
+        } else if (res.data?.temp_password) {
+          Modal.info({
+            title: 'Usuario creado',
+            content: (
+              <div>
+                <p>No se pudo enviar el correo. Entrega esta contraseña temporal al usuario:</p>
+                <p style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: 16 }}>
+                  {res.data.temp_password}
+                </p>
+              </div>
+            ),
+          });
+        } else {
+          message.success('Usuario creado correctamente');
+        }
       }
 
       setModalVisible(false);
@@ -151,6 +218,16 @@ const Users = () => {
       ),
     },
     {
+      title: 'Rol',
+      dataIndex: 'is_admin',
+      align: 'center',
+      render: (isAdmin) => (
+        <Tag color={isAdmin ? 'gold' : 'default'}>
+          {isAdmin ? 'Administrador' : 'Usuario'}
+        </Tag>
+      ),
+    },
+    {
       title: 'Acciones',
       align: 'center',
       render: (_, record) => (
@@ -163,7 +240,18 @@ const Users = () => {
             Editar
           </Button>
           <Popconfirm
-            title="�Eliminar este usuario?"
+            title="¿Restablecer la contraseña?"
+            description="Se enviará una nueva contraseña temporal a su correo."
+            onConfirm={() => handleReset(record)}
+            okText="Sí, restablecer"
+            cancelText="Cancelar"
+          >
+            <Button type="link" icon={<KeyOutlined />}>
+              Restablecer
+            </Button>
+          </Popconfirm>
+          <Popconfirm
+            title="¿Eliminar este usuario?"
             onConfirm={() => handleDelete(record.id)}
             disabled={record.id === 1}
           >
@@ -182,6 +270,7 @@ const Users = () => {
   ];
 
   return (
+    <>
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
         <Title level={3}>Administracion de Usuarios</Title>
@@ -217,18 +306,59 @@ const Users = () => {
             <Input />
           </Form.Item>
 
-          <Form.Item name="password" label="Password">
-            <Input.Password />
-          </Form.Item>
+          {editingUser ? (
+            <Form.Item name="password" label="Nueva contraseña (opcional)">
+              <Input.Password placeholder="Dejar en blanco para no cambiarla" />
+            </Form.Item>
+          ) : (
+            <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
+              Se generará una contraseña temporal y se enviará al correo del usuario.
+              Deberá cambiarla en su primer inicio de sesión.
+            </Text>
+          )}
 
           <Divider />
 
-          <Form.Item name="is_active" valuePropName="checked">
-            <Switch checkedChildren="Activo" unCheckedChildren="Inactivo" />
-          </Form.Item>
+          <Space size={48} align="start">
+            <Form.Item name="is_active" label="Estado" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Switch checkedChildren="Activo" unCheckedChildren="Inactivo" />
+            </Form.Item>
+            <Form.Item name="is_admin" label="Administrador" valuePropName="checked" style={{ marginBottom: 0 }}>
+              <Switch checkedChildren="Sí" unCheckedChildren="No" />
+            </Form.Item>
+          </Space>
         </Form>
       </Modal>
     </Card>
+
+    <Card
+      style={{ marginTop: 24 }}
+      title={<span><MailOutlined /> Configuración de envíos de reportes</span>}
+    >
+      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+        Correos que reciben los reportes automáticos (separa varios con coma). Los cambios se aplican de inmediato.
+      </Text>
+      <Form form={cfgForm} layout="vertical" onFinish={handleSaveConfig} style={{ maxWidth: 640 }}>
+        <Form.Item
+          name="gerencia"
+          label="Gerencia General"
+          tooltip="Reciben el resumen ejecutivo semanal y el reporte mensual"
+        >
+          <Input placeholder="gerencia@macsalud.com, direccion@macsalud.com" />
+        </Form.Item>
+        <Form.Item
+          name="administracion"
+          label="Administración"
+          tooltip="Reciben el digest diario y el reporte semanal de agentes/colas"
+        >
+          <Input placeholder="administracion@macsalud.com" />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={savingCfg}>
+          Guardar configuración
+        </Button>
+      </Form>
+    </Card>
+    </>
   );
 };
 

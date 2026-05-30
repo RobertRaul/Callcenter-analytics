@@ -1,6 +1,6 @@
 // App.jsx - Migrado a Ant Design con tema MACSA y navegación responsive
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { Layout, Menu, ConfigProvider, Typography, Dropdown, Avatar, Space } from 'antd';
 import {
   DashboardOutlined,
@@ -102,9 +102,18 @@ function AppLayout({ user, onLogout }) {
 
   // Filtrar items del menú según permisos
   const menuItems = user ? allMenuItems.filter(item => {
-    if (item.permission === 'admin') return user.username === 'admin';
+    if (item.permission === 'admin') return !!(user.is_admin || (user.permissions && user.permissions.admin) || user.username === 'admin');
     return user.permissions && user.permissions[item.permission];
   }) : [];
+
+  // Control de acceso por ruta (evita entrar por URL directa sin permiso)
+  const canAccess = (permission) => {
+    if (permission === 'admin') {
+      return !!(user && (user.is_admin || (user.permissions && user.permissions.admin) || user.username === 'admin'));
+    }
+    return !!(user && user.permissions && user.permissions[permission]);
+  };
+  const guard = (permission, element) => (canAccess(permission) ? element : <Navigate to="/" replace />);
 
   // Menú dropdown del usuario
   const userMenuItems = [
@@ -228,16 +237,13 @@ function AppLayout({ user, onLogout }) {
           overflowX: 'hidden'
         }}>
           <Routes>
-            {/* MIGRADAS Y FUNCIONALES */}
             <Route path="/" element={<Dashboard />} />
-            <Route path="/analisis" element={<Analisis />} />
-
-            {/* TODAS MIGRADAS Y FUNCIONALES */}
-            <Route path="/calls" element={<Calls />} />
-            <Route path="/queues" element={<Queues />} />
-            <Route path="/agents" element={<Agents />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/users" element={<Users />} />
+            <Route path="/analisis" element={guard('reports', <Analisis />)} />
+            <Route path="/calls" element={guard('calls', <Calls />)} />
+            <Route path="/queues" element={guard('queues', <Queues />)} />
+            <Route path="/agents" element={guard('agents', <Agents />)} />
+            <Route path="/reports" element={guard('reports', <Reports />)} />
+            <Route path="/users" element={guard('admin', <Users />)} />
           </Routes>
         </Content>
       </Layout>

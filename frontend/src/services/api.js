@@ -35,6 +35,12 @@ export const loadingBus = {
 api.interceptors.request.use(
     (config) => {
         startRequest();
+        // Adjuntar el JWT automáticamente si existe
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers = config.headers || {};
+            config.headers.Authorization = `Bearer ${token}`;
+        }
         console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`);
         return config;
     },
@@ -273,6 +279,18 @@ export const usersAPI = {
   create: (data) => api.post('/users/create', data),
   update: (id, data) => api.put(`/users/update/${id}`, data),
   delete: (id) => api.delete(`/users/delete/${id}`),
+  resetPassword: (id) => api.post(`/users/reset-password/${id}`),
+  getReportConfig: () => api.get('/users/report-config'),
+  saveReportConfig: (data) => api.put('/users/report-config', data),
+};
+
+// Autenticación
+export const authAPI = {
+  login: (username, password) => api.post('/auth/login', { username, password }),
+  me: () => api.get('/auth/me'),
+  changePassword: (current_password, new_password) =>
+    api.post('/auth/change-password', { current_password, new_password }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
 };
 
 
