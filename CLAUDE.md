@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Call Center Analytics system for Issabel 4 - real-time analytics and reporting for call center operations. The system parses Asterisk's `queue_log` (from MySQL or file) and presents data through a modern web interface with dashboards, reports, and Excel/PDF export capabilities.
 
 **Tech Stack:**
-- **Backend**: FastAPI (Python 3.8+), PyMySQL, Pydantic, ReportLab/OpenPyXL
-- **Frontend**: React 18.2, Ant Design 5, React Router 6, Recharts
-- **Deployment**: Systemd service + Nginx reverse proxy
+- **Backend**: FastAPI (Python 3.8+), PyMySQL, Pydantic, ReportLab/OpenPyXL — served by Uvicorn (8 workers, bound to `127.0.0.1:8000`)
+- **Frontend**: React 18.2, Ant Design 5, React Router 6, Chart.js/react-chartjs-2 (Recharts also present)
+- **Deployment**: Systemd service + Nginx reverse proxy (HTTPS)
+- **Exposure**: Publicly reachable on the Internet at `https://metricas.macsalud.com` (Let's Encrypt). Consumed by the web UI **and** an external Windows desktop application. See **Security & Internet Exposure** below.
 
 ## Essential Commands
 
@@ -29,8 +30,10 @@ pip install -r requirements.txt
 cd src
 python main.py
 
-# The server runs on http://192.168.11.3:8000
-# Docs available at: /docs (Swagger UI) and /redoc
+# Dev server: http://0.0.0.0:8000 (SERVER_HOST in settings). Docs at /docs and /redoc.
+# NOTE: In PRODUCTION the API is NOT run via `python main.py`. It runs under systemd
+# as: uvicorn main:app --host 127.0.0.1 --port 8000 --workers 8
+# (bound to localhost only — Nginx is the sole entry point).
 ```
 
 ### Frontend Development
@@ -72,8 +75,10 @@ systemctl reload nginx
 ### Testing & Verification
 
 ```bash
-# Check API health
-curl http://192.168.11.3:8000/health
+# Check API health (8000 is bound to localhost only now)
+curl http://127.0.0.1:8000/health
+# Or through Nginx (internal / public):
+curl -k https://metricas.macsalud.com/health   # from an internal subnet
 
 # Verify queue_log access
 ls -la /var/log/asterisk/queue_log
@@ -128,7 +133,8 @@ Asterisk queue_log (MySQL/File) → Parser → FastAPI → React Frontend
 **Entry Point**: `frontend/src/index.js` → `App.jsx`
 - Uses Ant Design theming (`config/theme.js` with MACSA branding)
 - Router-based navigation with permission system
-- Responsive design with mobile support (auto-collapse sidebar)
+- **Mobile-responsive**: on mobile (`< 768px`) the sidebar becomes a hidden overlay drawer with a dark backdrop that closes on tap/navigation; content uses full width; header/content paddings shrink. See `App.jsx` (`isMobile`, `collapsedWidth`, backdrop) and `index.css` (table horizontal-scroll, mobile media queries).
+- **Global loading indicator**: mounts `<GlobalLoading />` once; a top progress bar + a "Cargando…" badge appear automatically on ANY API request (every filter, every page). Driven by `loadingBus` in `services/api.js` (axios interceptors count active requests).
 
 **Pages** (`frontend/src/pages/`):
 - `Login.jsx`: JWT authentication
@@ -141,11 +147,12 @@ Asterisk queue_log (MySQL/File) → Parser → FastAPI → React Frontend
 
 **Components** (`frontend/src/components/`):
 - `Dashboard.jsx`: Main dashboard with summary cards and charts
+- `GlobalLoading.jsx`: Global loading UI (top progress bar + "Cargando…" badge). Subscribes to `loadingBus`; the badge only appears if a request takes >350ms (avoids flicker on 30s polling).
 
 **API Client**: `frontend/src/services/api.js`
-- Axios instance with base URL: `http://192.168.11.3:8000`
-- Organized API methods by domain: `callsAPI`, `queuesAPI`, `agentsAPI`, `recordingsAPI`, `analisisAPI`, `dashboardAPI`
-- Request/response interceptors for logging and error handling
+- Axios instance with **relative** base URL from `REACT_APP_API_URL` (`.env` → `/api`); Nginx proxies `/api` to the backend. Do NOT hardcode `http://192.168.11.3:8000`.
+- Organized API methods by domain: `callsAPI`, `queuesAPI`, `agentsAPI`, `recordingsAPI`, `analisisAPI`, `dashboardAPI`, `usersAPI`
+- Request/response interceptors for logging, error handling, **and the global loading counter** (`loadingBus.subscribe(...)` exported for `GlobalLoading.jsx`)
 
 **Menu Permissions**:
 - Dashboard: `dashboard`
@@ -158,14 +165,59 @@ Asterisk queue_log (MySQL/File) → Parser → FastAPI → React Frontend
 **Systemd Service**: `/etc/systemd/system/callcenter-api.service`
 - Runs backend as root user (required for queue_log access)
 - Working directory: `/opt/callcenter-analytics/backend/src`
-- Uses venv Python: `/opt/callcenter-analytics/backend/venv/bin/python`
+- ExecStart: `uvicorn main:app --host 127.0.0.1 --port 8000 --workers 8` (8 workers; bound to localhost only — never `0.0.0.0` in prod)
 - Auto-restart enabled with 10s delay
+- After editing: `systemctl daemon-reload && systemctl restart callcenter-api`
 
-**Nginx Config**: `/etc/nginx/conf.d/callcenter.conf`
-- Serves React build from `/opt/callcenter-analytics/frontend/build`
-- Proxies `/api/*`, `/docs`, `/redoc`, `/openapi.json` to backend (port 8000)
-- Aggressive no-cache for `index.html` (always reload)
-- Long-term cache for static assets (`.js`, `.css`)
+**Nginx Config**: `/etc/nginx/sites-available/callcenter` (symlinked from `sites-enabled/`)
+- `:80` → only the ACME challenge (`/.well-known/acme-challenge/`, webroot `/var/www/certbot`) + 301 redirect to HTTPS
+- `:443` → TLS (Let's Encrypt), serves React build from `/opt/callcenter-analytics/frontend/build`
+- Proxies `/api` to `http://127.0.0.1:8000`; `/docs`, `/redoc`, `/openapi.json` proxied too **but restricted to internal subnets** (`deny 192.168.2.23; allow 192.168.2/3/11.0/24; deny all;`)
+- **Rate limiting**: zones defined in `/etc/nginx/conf.d/ratelimit.conf` (`api_zone` 30r/s burst 60, `auth_zone` 5r/s burst 10 on `/api/auth`)
+- **Bot-path blocking**: regex `location` returns `444` for `/.env`, `/wp-login`, `/solr`, `/phpmyadmin`, etc.
+- **Security headers**: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy; `server_tokens off`
+- Aggressive no-cache for `index.html`; long-term cache for static assets (`.js`, `.css`)
+
+## Security & Internet Exposure
+
+The system is published to the Internet for an external Windows app + remote web access. Key facts an agent must know before changing networking/deploy:
+
+**Inbound path (how the Internet reaches it):**
+```
+Internet → 190.119.206.67 (ISP Claro) → FortiGate (deep SSL/SSH inspection)
+         → MikroTik (DNAT 443/80 + SrcNAT) → 192.168.11.3 (this server) → Nginx :443
+```
+- Public DNS: `metricas.macsalud.com` → `190.119.206.67` (authoritative: BanaHosting).
+- The server's **default route exits via a different ISP** (`200.215.229.x`), so the MikroTik does **SrcNAT** — therefore **all Internet traffic appears to Nginx with source IP `192.168.2.23`**. This is why `/docs` has an explicit `deny 192.168.2.23` before the internal-subnet allows.
+- VLAN `192.168.11.x` = servers; users/admins are on `192.168.2.x` / `192.168.3.x`; Issabel DB on `192.168.3.2`.
+
+**Host firewall (ufw, active):**
+- Internet: only `22, 80, 443`.
+- Internal subnets `192.168.2.0/24`, `192.168.3.0/24`, `192.168.11.0/24`: full access.
+- `8000` (API) and `3306` (MySQL) are **not** reachable from the Internet (API bound to localhost; ufw blocks 3306 externally).
+
+**TLS**: Let's Encrypt cert for `metricas.macsalud.com` (+`www`), issued via webroot `/var/www/certbot`. Auto-renew via `certbot.timer`; deploy hook `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` reloads Nginx. certbot is the **snap** build (the apt 0.40 was broken).
+
+**Auth**: JWT `SECRET_KEY` is a real random secret in `backend/.env` (no longer the placeholder). `ACCESS_TOKEN_EXPIRE_MINUTES=1440` (24h).
+
+**Git remote caveat**: SSH pushes to GitHub fail from this server — the FortiGate intercepts/blocks SSH (host key won't match GitHub's real `p2QAMXN…`). Push over **HTTPS with a PAT** (the correct repo is `https://github.com/RobertRaul/Callcenter-analytics`). For a clean SSH path, exempt GitHub from FortiGate SSL/SSH inspection.
+
+## Users, Email & Automated Reports
+
+**User store**: SQLite `backend/users.db`, table `users`. Key columns added over time: `must_change_password`, `is_admin` (migrated automatically in `auth_service.init_db`). The `admin` user is forced `is_admin=1` and its email defaults to `rarmejo@macsalud.com`.
+
+**Auth role model**: admin = `is_admin` flag (not username). `dependencies.require_admin` enforces it; `/api/users/*` are admin-only. Frontend gates the Usuarios menu AND the `/users` route by `is_admin` (see `App.jsx` `canAccess`/`guard`).
+
+**User lifecycle (email-based)**:
+- Create (`POST /api/users/create`): no password input — generates a **temp password**, emails it, sets `must_change_password=1`. If SMTP not configured, returns `temp_password` in the response as fallback (shown in the UI).
+- First login returns `must_change_password=true` → frontend forces a change via `POST /api/auth/change-password`.
+- Admin reset (`POST /api/users/reset-password/{id}`) and self-service (`POST /api/auth/forgot-password`, public, generic response) both issue a new temp password.
+
+**Email**: `services/email_service.py` (SMTP via Gmail/Workspace, STARTTLS 587). Config in `.env`: `SMTP_HOST/PORT/USER/PASSWORD/FROM/FROM_NAME`, `APP_BASE_URL`. `is_configured()` gates sending. Supports attachments (`send_with_attachments`).
+
+**Automated reports**: `services/report_mailer.py` builds 4 reports (daily/weekly-exec/monthly/weekly-agents) reusing controllers + `reports_service` (PDF+Excel), and emails them. Run via `backend/send_report.py <key>`, scheduled in `/etc/cron.d/callcenter-reports`. **Recipients are managed from the UI** (`/users` → "Configuración de envíos"), stored in `users.db` table `app_settings` via `services/settings_store.py` (GET/PUT `/api/users/report-config`); `.env` `REPORT_RECIPIENTS_*` are fallback only.
+
+**Config loading caveat**: `settings.py` uses an **absolute** `env_file` path (`/opt/callcenter-analytics/backend/.env`) because the service runs from `backend/src`. `auth_service` reads `SECRET_KEY` from settings (no longer hardcoded).
 
 ## Important Implementation Details
 
@@ -173,7 +225,7 @@ Asterisk queue_log (MySQL/File) → Parser → FastAPI → React Frontend
 
 The parser has **dual-mode operation**:
 1. **MySQL Mode (Primary)**: Connects to `asteriskcdrdb.queue_log` on 192.168.3.2
-   - Uses credentials: `asteriskuser` / `aul`
+   - Uses credentials: `asteriskuser` / `<contraseña>`
    - Data populated by `queue-log-sync.service` daemon on Issabel server
    - Table has UNIQUE index on (time, callid, event, agent) to prevent duplicates
    - Issabel's MySQL schema differs from file format (has extra `data` field)
@@ -212,21 +264,24 @@ The recordings API supports both streaming (`/api/recordings/stream/{callid}`) a
 The system uses **two separate MySQL connections**:
 1. **Queue Log Access** (primary data source):
    - Host: 192.168.3.2
-   - User: `asteriskuser` / Password: `aul`
+   - User: `asteriskuser` / Password: `<contraseña>`
    - Database: `asteriskcdrdb`
    - Table: `queue_log`
 
 2. **Optional CDR Access** (reports/additional data):
    - Host: 192.168.3.2
-   - User: `reportes` / Password: `issabel`
+   - User: `reportes` / Password: `<contraseña>`
    - Databases: `asteriskcdrdb`, `asterisk`
 
 ### CORS Configuration
 
-When adding new frontend features or changing API structure, ensure CORS origins in `backend/src/config/settings.py` include:
-- `http://localhost:3000` (development)
-- `http://192.168.11.3` (production)
-- `http://192.168.11.3:3000` (if testing prod API with dev frontend)
+`CORS_ORIGINS` is set in `backend/.env` (overrides the default list in `settings.py`). Production value is restricted to:
+- `https://metricas.macsalud.com`
+- `https://192.168.11.3`, `http://192.168.11.3` (internal access)
+
+Notes:
+- The React frontend is **same-origin** with Nginx, so CORS does not apply to it.
+- The external **Windows desktop app** typically sends no `Origin` header, so CORS is irrelevant to it (it just needs JWT auth). Don't loosen CORS for the desktop app.
 
 ### Router Registration
 
@@ -273,16 +328,20 @@ When implementing recording features:
 
 ## Key Configuration Files
 
-- `backend/src/config/settings.py`: All backend settings (DB, CORS, JWT)
-- `frontend/src/services/api.js`: API base URL and endpoints
+- `backend/.env`: Live backend settings — DB creds, `CORS_ORIGINS`, `SECRET_KEY` (real secret), `ACCESS_TOKEN_EXPIRE_MINUTES` (overrides `settings.py` defaults)
+- `backend/src/config/settings.py`: Default backend settings (DB, CORS, JWT) — overridden by `.env`
+- `frontend/src/services/api.js`: API methods + axios instance + `loadingBus` (base URL from `REACT_APP_API_URL`)
+- `frontend/.env`: `REACT_APP_API_URL=/api`
 - `frontend/src/config/theme.js`: Ant Design theme customization
-- `/etc/systemd/system/callcenter-api.service`: Production backend service
-- `/etc/nginx/conf.d/callcenter.conf`: Nginx reverse proxy config
+- `/etc/systemd/system/callcenter-api.service`: Production backend service (uvicorn, 8 workers, 127.0.0.1)
+- `/etc/nginx/sites-available/callcenter`: Nginx reverse proxy + TLS + security (symlinked in `sites-enabled/`)
+- `/etc/nginx/conf.d/ratelimit.conf`: Rate-limit zones
 
 ## Default Credentials
 
-- **Admin User**: `admin` / `admin123`
-- **MySQL Queue Log**: `asteriskuser` / `aul`
-- **MySQL Reports**: `reportes` / `issabel`
+- **Admin User**: `admin` / `admin123` (change in production — the app is Internet-facing)
+- **MySQL Queue Log**: `asteriskuser` / `<contraseña>`
+- **MySQL Reports**: `reportes` / `<contraseña>`
+- **JWT `SECRET_KEY`**: already rotated to a real random secret in `backend/.env` (do not revert to the placeholder). Rotating it again invalidates all active sessions (users re-login once).
 
-Change these in production via `settings.py` and database.
+These DB/SSH credentials live in `backend/.env` (gitignored). Never commit `.env`.

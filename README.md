@@ -32,23 +32,44 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 - **html2canvas** 1.4.1 - Captura de gráficos
 
 **Deployment:**
-- **Systemd** - Servicio del backend
-- **Nginx** - Reverse proxy + servidor estático
-- **Ubuntu Server** - Sistema operativo
+- **Systemd** - Servicio del backend (Uvicorn, **8 workers**, escuchando solo en `127.0.0.1:8000`)
+- **Nginx** - Reverse proxy + servidor estático + **TLS (HTTPS)**
+- **Let's Encrypt** - Certificado válido con renovación automática
+- **ufw** - Firewall de host
+- **Ubuntu Server 20.04** - Sistema operativo
+
+**Consumidores del API:**
+- 🌐 **Interfaz web** React (mismo servidor, servida por Nginx)
+- 💻 **Aplicación de escritorio Windows** (externa, consume el API por Internet con JWT)
 
 ### Arquitectura General
 
+El sistema es accesible de forma **segura desde Internet** en `https://metricas.macsalud.com`:
+
 ```
-┌─────────────────────┐         ┌────────────────────┐         ┌─────────────────────┐
-│   Frontend          │         │     Backend        │         │   Issabel Server    │
-│   React + Ant       │◄────────┤   FastAPI          │◄────────┤   (192.168.3.2)     │
-│   Design            │  HTTP   │   Port: 8000       │  MySQL  │   queue_log DB      │
-│   Port: 80          │         │   + REST API       │  + SSH  │   + Recordings      │
-└─────────────────────┘         └────────────────────┘         └─────────────────────┘
-       │                                  │
-       │                                  │
-       └──────────────────────────────────┘
-         http://192.168.11.3
+                 Internet
+                    │  https://metricas.macsalud.com
+                    ▼
+        190.119.206.67  (ISP Claro)
+                    │
+                    ▼
+        FortiGate  →  MikroTik (DNAT 443/80 + SrcNAT)
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Servidor svrmetrics  (192.168.11.3)                                       │
+│                                                                            │
+│   Nginx :443 (TLS, rate-limit, headers, /docs solo LAN)                    │
+│      ├── /            → React build (SPA, responsive)                       │
+│      └── /api         → Uvicorn 127.0.0.1:8000  (FastAPI, 8 workers)        │
+│                                   │                                         │
+└───────────────────────────────────┼─────────────────────────────────────-─┘
+                                     │  MySQL + SSH
+                                     ▼
+                         Issabel Server (192.168.3.2)
+                         queue_log DB + Grabaciones
+
+Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
 ```
 
 ---
@@ -73,10 +94,14 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 │   │   │   ├── reports_routes.py    # 4 endpoints de reportes
 │   │   │   ├── recordings_routes.py # 5 endpoints de grabaciones
 │   │   │   ├── auth_routes.py       # 2 endpoints de autenticación
-│   │   │   ├── users_routes.py      # 4 endpoints de usuarios
+│   │   │   ├── users_routes.py      # Usuarios + programaciones de reportes (admin)
 │   │   │   └── analisis_routes.py   # 7 endpoints de análisis ejecutivo
 │   │   ├── services/
-│   │   │   ├── auth_service.py         # Autenticación JWT + bcrypt
+│   │   │   ├── auth_service.py         # Autenticación JWT + bcrypt + contraseñas temporales
+│   │   │   ├── email_service.py        # Envío SMTP (Gmail) + adjuntos
+│   │   │   ├── report_mailer.py        # Reportes automáticos por correo (PDF+Excel)
+│   │   │   ├── settings_store.py       # Config editable en runtime (app_settings)
+│   │   │   ├── schedules_store.py      # Programaciones de reportes (tabla report_schedules)
 │   │   │   ├── reports_service.py      # Generación Excel/PDF con branding
 │   │   │   ├── recordings_service.py   # Acceso a grabaciones vía SSH/SCP
 │   │   │   └── optimized_stats_service.py  # Queries optimizadas con vistas MySQL
@@ -84,7 +109,10 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 │   │   │   └── queue_log_parser.py  # Parser dual (MySQL + archivo)
 │   │   ├── models/
 │   │   │   └── schemas.py           # Pydantic schemas
+│   │   ├── dependencies.py          # Dependencias de auth (get_current_user, require_admin)
 │   │   └── main.py                  # Punto de entrada FastAPI
+│   ├── send_report.py               # CLI de un reporte puntual por su clave
+│   ├── dispatch_reports.py          # Despachador de programaciones (lo invoca cron cada minuto)
 │   ├── migrations/
 │   │   ├── 001_performance_optimization.sql  # Vistas MySQL + índices
 │   │   └── deploy.sh                          # Script de deployment
@@ -96,6 +124,7 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Dashboard.jsx        # Dashboard principal
+│   │   │   ├── GlobalLoading.jsx    # Indicador de carga global (barra + badge)
 │   │   │   └── charts/              # Componentes de gráficos Chart.js
 │   │   │       ├── BarChartComponent.jsx
 │   │   │       ├── DoughnutChartComponent.jsx
@@ -188,12 +217,57 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 - **Filtros personalizables:** Rango de fechas, colas específicas
 
 ### 7. Sistema de Autenticación
-- **Login JWT** con tokens de larga duración (8 horas)
+- **Login JWT** con tokens de larga duración (24 horas), firmados con secreto del `.env`
 - **Hash bcrypt** para contraseñas
-- **Roles y permisos granulares:** dashboard, calls, queues, agents, reports, admin
-- **Gestión de usuarios:** CRUD completo (solo admin)
-- **Usuario por defecto:** admin / admin123
-- **Sesiones persistentes** con localStorage
+- **Rol de administrador por flag `is_admin`** (cualquier usuario puede ser admin, ya no está atado al username)
+- **Permisos granulares:** dashboard, calls, queues, agents, reports, admin
+- **Rutas protegidas** en frontend (guardia por permiso) **y** backend (dependencia `require_admin`)
+- **Sesiones persistentes** con localStorage; el token se adjunta automáticamente a cada petición
+
+### 8. Interfaz Adaptativa (Responsive) y Experiencia de Uso
+- **Diseño responsive para móvil:** el menú lateral se convierte en un panel superpuesto (oculto por defecto, se cierra al tocar fuera o al navegar); el contenido ocupa todo el ancho.
+- **Tablas con scroll horizontal propio:** las tablas anchas (Llamadas, Agentes, Colas…) se deslizan sin romper el layout en pantallas pequeñas.
+- **Indicador de carga global:** en **cualquier** filtro de **cualquier** página aparece automáticamente una barra de progreso superior + un badge "Cargando…". Así el usuario siempre sabe si los datos se están cargando. Implementado de forma centralizada vía los interceptores de Axios (`loadingBus`) y el componente `GlobalLoading`.
+
+### 9. Seguridad y Acceso por Internet
+- **Acceso público seguro** en `https://metricas.macsalud.com` con **certificado Let's Encrypt** válido (renovación automática).
+- **Backend aislado:** Uvicorn escucha solo en `127.0.0.1`; Nginx es el único punto de entrada.
+- **Firewall (ufw):** desde Internet solo 22/80/443; MySQL (3306) y la API (8000) no son accesibles desde fuera.
+- **Endurecimiento de Nginx:** rate-limiting (general y anti fuerza-bruta en login), bloqueo de rutas de bots, cabeceras de seguridad (HSTS, X-Frame-Options, etc.) y documentación (`/docs`) restringida a la red interna.
+- **Autenticación JWT** con secreto robusto; consumible por la app de escritorio Windows mediante `Authorization: Bearer <token>`.
+
+### 10. Gestión de Usuarios con Invitación por Correo
+- **Alta por correo:** al crear un usuario, el sistema genera una **contraseña temporal**, la envía por email y obliga a **cambiarla en el primer ingreso**.
+- **Reseteo por el admin:** botón "Restablecer" que envía una nueva contraseña temporal al correo del usuario.
+- **Autoservicio:** enlace **"¿Olvidaste tu contraseña?"** en el login (respuesta genérica, no revela si el correo existe).
+- **Rol Administrador** asignable desde el panel (switch) y columna de rol en la tabla.
+- **Envío SMTP** vía Google Workspace (Gmail). Si el correo no está configurado, la contraseña temporal se muestra en pantalla como respaldo.
+
+### 11. Reportes Automáticos por Correo (programaciones configurables)
+Reportes que se envían solos, con **PDF + Excel adjuntos** y un **resumen de KPIs** en el cuerpo.
+Todo el envío se configura **desde el panel** `/users → "Programaciones de reportes"`, sin tocar archivos
+ni terminal. Cada programación define **qué reporte, qué días, a qué hora y a qué correos**, y se puede
+activar/pausar o disparar al instante con **"Enviar ahora"**.
+
+**Tipos de reporte disponibles** (el dato que contiene cada uno):
+
+| Tipo | Contenido | Periodo de datos |
+|---|---|---|
+| Digest Diario Operativo | KPIs generales + resumen del día | Día anterior |
+| Resumen Ejecutivo Semanal | KPIs generales | Últimos 7 días |
+| Semanal de Agentes + Colas (SLA/Abandono) | Agentes + colas | Últimos 7 días |
+| Reporte Mensual de Desempeño | KPIs generales | Mes anterior |
+
+**Frecuencia configurable por programación:** Diario, Semanal (días Lun–Dom a elección) o Mensual (día del mes),
+con hora exacta (HH:MM) y lista libre de destinatarios.
+
+**Cómo funciona por dentro:**
+- Las programaciones se guardan en `users.db` (tabla **`report_schedules`**, gestionada por `schedules_store.py`).
+- Un **único job de cron** (`/etc/cron.d/callcenter-reports`) ejecuta `dispatch_reports.py` **cada minuto**;
+  el despachador dispara las programaciones cuyo día/hora coinciden y evita duplicados con `last_run` (máximo un envío por día por programación).
+- En el primer arranque la tabla se **siembra** con las 4 programaciones clásicas (digest diario 07:30, ejecutivo
+  semanal lunes 08:00, semanal de agentes lunes 08:05, mensual día 1 08:00).
+- `send_report.py <clave>` sigue disponible para enviar un reporte puntual desde la terminal.
 
 ---
 
@@ -272,21 +346,25 @@ Crear archivo `/etc/systemd/system/callcenter-api.service`:
 
 ```ini
 [Unit]
-Description=Call Center Analytics API - FastAPI Backend
-After=network.target mysql.service
+Description=Call Center Analytics API
+After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/callcenter-analytics/backend/src
 Environment="PATH=/opt/callcenter-analytics/backend/venv/bin"
-ExecStart=/opt/callcenter-analytics/backend/venv/bin/python main.py
+# Producción: Uvicorn con 8 workers, escuchando SOLO en localhost (Nginx es el frente)
+ExecStart=/opt/callcenter-analytics/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 8
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> **Workers:** se usan 8 workers (regla `(2×núcleos)+1` en un servidor de 4 núcleos / 12 GB).
+> Importante para soportar la app externa + la web, ya que la generación de reportes (PDF/Excel) es síncrona y bloquea un worker mientras se ejecuta.
 
 **Comandos:**
 ```bash
@@ -302,63 +380,90 @@ systemctl status callcenter-api
 journalctl -u callcenter-api -f
 ```
 
-### Frontend: Nginx
+### Frontend: Nginx (HTTPS + endurecimiento)
 
-Crear archivo `/etc/nginx/conf.d/callcenter.conf`:
+Config real: **`/etc/nginx/sites-available/callcenter`** (symlink en `sites-enabled/`). Resumen:
 
 ```nginx
+# :80 -> solo reto ACME + redirección a HTTPS
 server {
     listen 80;
-    server_name 192.168.11.3 metricas.macsalud.com;
-
-    root /opt/callcenter-analytics/frontend/build;
-    index index.html;
-
-    # Frontend SPA
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Cache agresivo para index.html (siempre recargar)
-    location = /index.html {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
-        add_header Expires "0";
-    }
-
-    # Cache largo para assets estáticos
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Proxy al backend FastAPI
-    location /api {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Documentación de API
-    location ~ ^/(docs|redoc|openapi.json) {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-    }
+    server_name metricas.macsalud.com www.metricas.macsalud.com 192.168.11.3;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
 }
+
+# :443 -> TLS + frontend + API + seguridad
+server {
+    listen 443 ssl http2;
+    server_name metricas.macsalud.com www.metricas.macsalud.com;
+
+    ssl_certificate     /etc/letsencrypt/live/metricas.macsalud.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/metricas.macsalud.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Cabeceras de seguridad
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    server_tokens off;
+
+    # Bloqueo de rutas de bots (cierra conexión)
+    location ~* "(\.env|\.git|wp-login|wp-admin|wordpress|phpmyadmin|solr|cgi-bin)" { return 444; }
+
+    # Docs: SOLO red interna (Internet aparece como 192.168.2.23 por el SrcNAT)
+    location /docs { deny 192.168.2.23; allow 192.168.2.0/24; allow 192.168.3.0/24; allow 192.168.11.0/24; deny all; proxy_pass http://127.0.0.1:8000; }
+    # (igual para /redoc y /openapi.json)
+
+    # Login con límite anti fuerza-bruta
+    location /api/auth { limit_req zone=auth_zone burst=10 nodelay; proxy_pass http://127.0.0.1:8000; }
+
+    # API
+    location /api { limit_req zone=api_zone burst=60 nodelay; proxy_pass http://127.0.0.1:8000; }
+
+    # Frontend SPA (build de React)
+    location / { root /opt/callcenter-analytics/frontend/build; try_files $uri $uri/ /index.html; }
+}
+```
+
+Zonas de rate-limit en **`/etc/nginx/conf.d/ratelimit.conf`**:
+```nginx
+limit_req_zone $binary_remote_addr zone=api_zone:10m  rate=30r/s;
+limit_req_zone $binary_remote_addr zone=auth_zone:10m rate=5r/s;
+limit_req_status 429;
 ```
 
 **Comandos:**
 ```bash
-# Activar configuración
-nginx -t
-systemctl reload nginx
-
-# Ver logs
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
+nginx -t && systemctl reload nginx
+tail -f /var/log/nginx/access.log /var/log/nginx/error.log
 ```
+
+### Seguridad: Firewall (ufw) y Certificado HTTPS
+
+```bash
+# --- Firewall: Internet solo 22/80/443; subredes internas con acceso completo ---
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow from 192.168.2.0/24      # usuarios
+ufw allow from 192.168.3.0/24      # usuarios / Issabel
+ufw allow from 192.168.11.0/24     # VLAN servidores
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+
+# --- Certificado Let's Encrypt (certbot por snap; el de apt 0.40 está roto) ---
+snap install --classic certbot && ln -sf /snap/bin/certbot /usr/bin/certbot
+certbot certonly --webroot -w /var/www/certbot \
+  -d metricas.macsalud.com -d www.metricas.macsalud.com
+# Renovación automática (certbot.timer) + hook que recarga Nginx:
+#   /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh  ->  systemctl reload nginx
+certbot renew --dry-run
+```
+
+> **Red:** el acceso entra por la IP pública de Claro `190.119.206.67` → FortiGate → MikroTik (DNAT 443/80 + SrcNAT) → `192.168.11.3`. Por el SrcNAT, todo el tráfico de Internet llega a Nginx con IP `192.168.2.23` (de ahí el `deny 192.168.2.23` en `/docs`).
 
 ### Proceso de Actualización
 
@@ -384,32 +489,44 @@ systemctl reload nginx
 
 ### Variables de Entorno Backend
 
-Editar `/opt/callcenter-analytics/backend/src/config/settings.py`:
+La configuración viva está en **`/opt/callcenter-analytics/backend/.env`** (gitignored, **nunca** se commitea). Sobrescribe los valores por defecto de `settings.py`:
 
-```python
-# Servidor Issabel MySQL
-DB_HOST = "192.168.3.2"
-DB_PORT = 3306
-DB_USER_QUEUELOG = "asteriskuser"
-DB_PASSWORD_QUEUELOG = "aul"
-DB_NAME_CDR = "asteriskcdrdb"
+```bash
+# Base de datos Issabel
+DB_HOST=192.168.3.2
+DB_PORT=3306
+DB_USER_QUEUELOG=asteriskuser
+DB_PASSWORD_QUEUELOG=<contraseña>
+DB_NAME_CDR=asteriskcdrdb
 
-# API Server
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 8000
+# CORS — orígenes permitidos (la app de escritorio no usa CORS)
+CORS_ORIGINS=["https://metricas.macsalud.com","https://192.168.11.3","http://192.168.11.3"]
 
-# CORS (añadir dominios permitidos)
-CORS_ORIGINS = [
-    "http://metricas.macsalud.com",
-    "http://www.metricas.macsalud.com",
-    "http://localhost:3000",
-    "http://192.168.11.3",
-]
+# JWT — secreto REAL y aleatorio (generar con: openssl rand -hex 32)
+SECRET_KEY=<64-hex-aleatorio>
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440   # 24 horas
 
-# JWT
-SECRET_KEY = "cambiar-en-produccion-a-clave-segura"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
+# Envío de correo (Google Workspace / Gmail)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<cuenta@macsalud.com>      # remitente
+SMTP_PASSWORD=<app-password-16>      # App Password de Google (con 2FA)
+SMTP_FROM=                           # vacío = usa SMTP_USER
+SMTP_FROM_NAME=Call Center Analytics - MACSA
+APP_BASE_URL=https://metricas.macsalud.com
+
+# Destinatarios de reportes (RESPALDO opcional). Lo normal es administrarlos
+# desde el panel /users → "Programaciones de reportes" (se guardan en la BD,
+# tabla report_schedules). Estos valores solo se usan como fallback si una
+# programación no trae destinatarios propios.
+REPORT_RECIPIENTS_GERENCIA=
+REPORT_RECIPIENTS_ADMIN=
 ```
+
+> ⚠️ El binding del servidor en producción NO se controla por `SERVER_HOST` del `.env`, sino por el `ExecStart` del servicio systemd (`uvicorn --host 127.0.0.1 --workers 8`).
+>
+> 📧 **Reportes por correo:** se configuran desde el panel **/users → "Programaciones de reportes"** (qué reporte, días, hora y destinatarios; se guardan en `users.db`, tabla `report_schedules`). Los `REPORT_RECIPIENTS_*` del `.env` solo se usan como respaldo.
 
 ### Variables de Entorno Frontend
 
@@ -489,7 +606,7 @@ Las grabaciones de audio se almacenan en el servidor Issabel:
 # En recordings_service.py
 SSH_HOST = "192.168.3.2"
 SSH_USER = "root"
-SSH_PASSWORD = "m4cs4l4d"
+SSH_PASSWORD = "<password-ssh>"
 RECORDINGS_PATH = "/var/spool/asterisk/monitor"
 ```
 
@@ -499,8 +616,10 @@ RECORDINGS_PATH = "/var/spool/asterisk/monitor"
 
 ### Autenticación
 ```
-POST   /api/auth/login           # Login JWT
-GET    /api/auth/me              # Usuario actual
+POST   /api/auth/login            # Login JWT (devuelve must_change_password e is_admin)
+GET    /api/auth/me               # Usuario actual
+POST   /api/auth/change-password  # Cambiar la propia contraseña (cambio obligatorio)
+POST   /api/auth/forgot-password  # Autoservicio: envía temporal por correo (público)
 ```
 
 ### Llamadas (6 endpoints)
@@ -561,13 +680,25 @@ GET    /api/analisis/mapa-calor-semanal      # Mapa de calor 7×24
 GET    /api/analisis/sla-cumplimiento        # Análisis de SLA
 ```
 
-### Usuarios (4 endpoints - Solo Admin)
+### Usuarios y programaciones de reportes (Solo Admin)
 ```
-GET    /api/users/list           # Lista usuarios
-POST   /api/users/create         # Crear usuario
-PUT    /api/users/update/{id}    # Actualizar usuario
-DELETE /api/users/delete/{id}    # Eliminar usuario
+GET    /api/users/list                              # Lista usuarios
+POST   /api/users/create                            # Crear usuario (genera temporal + envía correo)
+PUT    /api/users/update/{id}                       # Actualizar usuario (incluye is_admin)
+DELETE /api/users/delete/{id}                       # Eliminar usuario
+POST   /api/users/reset-password/{id}               # Restablecer contraseña (envía temporal)
+GET    /api/users/report-config                     # (Legado) destinatarios de respaldo gerencia/admin
+PUT    /api/users/report-config                     # (Legado) guardar destinatarios de respaldo
+GET    /api/users/report-schedules                  # Listar programaciones de reportes
+POST   /api/users/report-schedules                  # Crear programación
+PUT    /api/users/report-schedules/{id}             # Actualizar programación
+DELETE /api/users/report-schedules/{id}             # Eliminar programación
+POST   /api/users/report-schedules/{id}/run-now     # Enviar ese reporte ahora (prueba)
 ```
+
+> 🔐 **Nota de autenticación:** solo `users_routes.py` y `auth_routes.py` exigen JWT. El resto de endpoints
+> es de acceso interno sin token. El frontend, ante un **401** (token vencido), limpia la sesión y redirige
+> al login automáticamente.
 
 ### Utilidades
 ```
@@ -616,7 +747,7 @@ journalctl -u callcenter-api -f
 ls -la /var/log/asterisk/queue_log
 
 # Probar conexión MySQL
-mysql -h 192.168.3.2 -u asteriskuser -paul asteriskcdrdb -e "SELECT COUNT(*) FROM queue_log;"
+mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb -e "SELECT COUNT(*) FROM queue_log;"
 
 # Verificar permisos
 sudo chown root:root /opt/callcenter-analytics/backend/users.db
@@ -627,7 +758,7 @@ sudo chmod 644 /opt/callcenter-analytics/backend/users.db
 
 ```bash
 # Verificar que el backend esté corriendo
-curl http://192.168.11.3:8000/health
+curl http://127.0.0.1:8000/health   # 8000 está bound a localhost (Nginx es el frente)
 
 # Verificar CORS (revisar consola del navegador F12)
 # Verificar configuración de REACT_APP_API_URL
@@ -642,7 +773,7 @@ curl http://192.168.11.3:8000/health
 ssh root@192.168.3.2 "ls -la /var/spool/asterisk/monitor/"
 
 # Verificar SSH desde servidor de analytics
-sshpass -p 'm4cs4l4d' ssh root@192.168.3.2 "hostname"
+sshpass -p '<password-ssh>' ssh root@192.168.3.2 "hostname"
 
 # Verificar dependencias
 which sshpass
@@ -657,7 +788,7 @@ cd /opt/callcenter-analytics/backend/migrations
 ./deploy.sh
 
 # Verificar que las vistas existan
-mysql -h 192.168.3.2 -u asteriskuser -paul asteriskcdrdb -e "SHOW TABLES LIKE 'v_%';"
+mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb -e "SHOW TABLES LIKE 'v_%';"
 
 # Ver logs para confirmar uso de vistas optimizadas
 journalctl -u callcenter-api | grep "OPTIMIZED"
@@ -690,7 +821,7 @@ cp /opt/callcenter-analytics/backend/users.db \
    /opt/backups/users_$(date +%Y%m%d).db
 
 # Backup de queue_log (MySQL - en servidor Issabel)
-ssh root@192.168.3.2 "mysqldump -u asteriskuser -paul asteriskcdrdb queue_log | gzip > /tmp/queue_log_backup.sql.gz"
+ssh root@192.168.3.2 "mysqldump -u asteriskuser -p asteriskcdrdb queue_log | gzip > /tmp/queue_log_backup.sql.gz"
 scp root@192.168.3.2:/tmp/queue_log_backup.sql.gz /opt/backups/
 ```
 
@@ -701,8 +832,8 @@ Issabel rota automáticamente el `queue_log`. El parser maneja correctamente arc
 ### Limpieza de Caché de Grabaciones
 
 ```bash
-# Limpiar grabaciones en caché mayores a 24 horas
-curl -X POST http://192.168.11.3:8000/api/recordings/cleanup-cache?max_age_hours=24
+# Limpiar grabaciones en caché mayores a 24 horas (desde el propio servidor)
+curl -X POST "http://127.0.0.1:8000/api/recordings/cleanup-cache?max_age_hours=24"
 ```
 
 ---
@@ -712,8 +843,8 @@ curl -X POST http://192.168.11.3:8000/api/recordings/cleanup-cache?max_age_hours
 - **CLAUDE.md:** Guía completa para Claude Code (desarrollo asistido)
 - **SOLUTION_PERFORMANCE.md:** Detalles de optimizaciones de performance
 - **CLEANUP_REPORT.md:** Análisis de código muerto y limpieza
-- **Swagger UI:** http://192.168.11.3:8000/docs (documentación interactiva)
-- **ReDoc:** http://192.168.11.3:8000/redoc (documentación alternativa)
+- **Swagger UI:** https://metricas.macsalud.com/docs (interactiva, solo red interna)
+- **ReDoc:** https://metricas.macsalud.com/redoc (solo red interna)
 
 ---
 
@@ -725,14 +856,14 @@ curl -X POST http://192.168.11.3:8000/api/recordings/cleanup-cache?max_age_hours
 - Host: 192.168.3.2
 - Puerto: 3306
 - Usuario: asteriskuser
-- Password: aul
+- Password: <contraseña>
 - Base de datos: asteriskcdrdb
 - Tabla principal: queue_log
 
 **SSH (para grabaciones):**
 - Host: 192.168.3.2
 - Usuario: root
-- Password: m4cs4l4d
+- Password: <password-ssh>
 - Ruta grabaciones: /var/spool/asterisk/monitor/
 
 **Daemon de sincronización (en servidor Issabel):**
@@ -764,8 +895,23 @@ Los reportes Excel/PDF incluyen:
 
 ---
 
+## 🆕 Novedades (v2.0.0)
+
+- ✅ **Acceso seguro por Internet** (`https://metricas.macsalud.com`) con Let's Encrypt + renovación automática.
+- ✅ **Endurecimiento de seguridad:** API en localhost, firewall ufw, rate-limiting, bloqueo de bots, cabeceras de seguridad, `/docs` solo LAN, secreto JWT rotado.
+- ✅ **Interfaz responsive** para móvil (menú superpuesto, tablas con scroll, paddings adaptativos).
+- ✅ **Indicador de carga global** en todos los filtros (barra + badge "Cargando…").
+- ✅ **8 workers** de Uvicorn para soportar la web + la app de escritorio externa.
+- ✅ **API consumible por la app de escritorio Windows** vía JWT.
+- ✅ **Gestión de usuarios por correo:** alta con contraseña temporal + cambio obligatorio, reseteo por admin y autoservicio ("¿Olvidaste tu contraseña?").
+- ✅ **Rol de administrador por flag `is_admin`** y rutas protegidas en frontend y backend.
+- ✅ **Envío de correo SMTP** (Google Workspace) integrado.
+- ✅ **Reportes automáticos por correo** (diario/semanal/mensual) con PDF + Excel, destinatarios editables desde el panel.
+
 ## 🚧 Roadmap Futuro
 
+- [x] ~~Interfaz responsive para móvil~~ (v2.0.0)
+- [x] ~~Indicador de carga en filtros~~ (v2.0.0)
 - [ ] Dashboard con actualización WebSocket en tiempo real
 - [ ] Alertas por email/SMS configurables
 - [ ] Reportes programados automáticos
@@ -774,6 +920,8 @@ Los reportes Excel/PDF incluyen:
 - [ ] Soporte multi-tenant
 - [ ] Tests automatizados (pytest + jest)
 - [ ] CI/CD con GitHub Actions
+- [ ] Excepción de GitHub en FortiGate para push por SSH sin token
+- [ ] Code-splitting del frontend para carga más rápida en móvil
 
 ---
 
@@ -793,16 +941,17 @@ Proyecto interno de uso empresarial - Clínica MACSA.
 
 ---
 
-**Versión:** 1.0.0
+**Versión:** 2.0.0
 **Última actualización:** Mayo 2026
 **Desarrollado para:** Issabel 4 / Asterisk
-**Servidor:** http://metricas.macsalud.com
+**Servidor:** https://metricas.macsalud.com
 
 ---
 
 **🔗 Enlaces Rápidos:**
-- 🌐 **Frontend:** http://192.168.11.3
-- 📡 **API:** http://192.168.11.3:8000
-- 📖 **Docs:** http://192.168.11.3:8000/docs
-- 🔍 **ReDoc:** http://192.168.11.3:8000/redoc
-- 💚 **Health:** http://192.168.11.3:8000/health
+- 🌐 **Aplicación (web):** https://metricas.macsalud.com
+- 📡 **API base:** https://metricas.macsalud.com/api
+- 📖 **Docs (Swagger):** https://metricas.macsalud.com/docs *(solo desde la red interna)*
+- 🔍 **ReDoc:** https://metricas.macsalud.com/redoc *(solo desde la red interna)*
+- 💚 **Health:** https://metricas.macsalud.com/health
+- 🖥️ **Acceso local directo (LAN):** https://192.168.11.3

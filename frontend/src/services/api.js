@@ -35,6 +35,12 @@ export const loadingBus = {
 api.interceptors.request.use(
     (config) => {
         startRequest();
+        // Adjuntar el JWT automáticamente si existe
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers = config.headers || {};
+            config.headers.Authorization = `Bearer ${token}`;
+        }
         console.log(`[API Request] ${config.method.toUpperCase()} ${config.url}`);
         return config;
     },
@@ -57,6 +63,14 @@ api.interceptors.response.use(
         console.error('[API Response Error]', error.response || error);
 
         if (error.response) {
+            // Sesión vencida / token inválido: limpiar y forzar re-login
+            if (error.response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                if (window.location.pathname !== '/') {
+                    window.location.assign('/');
+                }
+            }
             // Error con respuesta del servidor
             const message = error.response.data?.message || error.response.data?.error || 'Error del servidor';
             throw new Error(message);
@@ -273,6 +287,24 @@ export const usersAPI = {
   create: (data) => api.post('/users/create', data),
   update: (id, data) => api.put(`/users/update/${id}`, data),
   delete: (id) => api.delete(`/users/delete/${id}`),
+  resetPassword: (id) => api.post(`/users/reset-password/${id}`),
+  getReportConfig: () => api.get('/users/report-config'),
+  saveReportConfig: (data) => api.put('/users/report-config', data),
+  // Programaciones de reportes (flexibles)
+  listSchedules: () => api.get('/users/report-schedules'),
+  createSchedule: (data) => api.post('/users/report-schedules', data),
+  updateSchedule: (id, data) => api.put(`/users/report-schedules/${id}`, data),
+  deleteSchedule: (id) => api.delete(`/users/report-schedules/${id}`),
+  runScheduleNow: (id) => api.post(`/users/report-schedules/${id}/run-now`),
+};
+
+// Autenticación
+export const authAPI = {
+  login: (username, password) => api.post('/auth/login', { username, password }),
+  me: () => api.get('/auth/me'),
+  changePassword: (current_password, new_password) =>
+    api.post('/auth/change-password', { current_password, new_password }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
 };
 
 

@@ -1,28 +1,63 @@
 # routes/users_routes.py
-from fastapi import APIRouter, HTTPException
+import re
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import sqlite3
-from services.auth_service import pwd_context, DB_PATH
+from services.auth_service import pwd_context, DB_PATH, generate_temp_password, set_temp_password, get_user_by_id
+from services import email_service
+from services import settings_store
+from services import schedules_store
+from services import report_mailer
+from dependencies import require_admin
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
 class UserCreate(BaseModel):
     username: str
     email: str
-    password: str
     full_name: str
+    is_admin: bool = False
     access_dashboard: bool = True
     access_calls: bool = True
     access_queues: bool = True
     access_agents: bool = True
     access_reports: bool = True
 
+class ReportConfig(BaseModel):
+    gerencia: str = ""
+    administracion: str = ""
+
+class ScheduleIn(BaseModel):
+    name: str = ""
+    report_type: str
+    freq: str                     # 'daily' | 'weekly' | 'monthly'
+    days: List[int] = []          # 0=Lun..6=Dom (solo freq='weekly')
+    day_of_month: Optional[int] = None  # 1..28 (solo freq='monthly')
+    time: str                     # 'HH:MM'
+    recipients: str = ""          # correos separados por coma
+    enabled: bool = True
+
+    def validate_payload(self):
+        if self.report_type not in schedules_store.REPORT_TYPES:
+            raise HTTPException(status_code=400, detail=f"Tipo de reporte inválido. Opciones: {list(schedules_store.REPORT_TYPES)}")
+        if self.freq not in schedules_store.FREQS:
+            raise HTTPException(status_code=400, detail=f"Frecuencia inválida. Opciones: {list(schedules_store.FREQS)}")
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", (self.time or "").strip()):
+            raise HTTPException(status_code=400, detail="Hora inválida (formato HH:MM, 24h)")
+        if not [e for e in (self.recipients or "").split(",") if e.strip()]:
+            raise HTTPException(status_code=400, detail="Debes indicar al menos un destinatario")
+        if self.freq == "weekly" and not self.days:
+            raise HTTPException(status_code=400, detail="Selecciona al menos un día de la semana")
+        if self.freq == "monthly" and not (self.day_of_month and 1 <= self.day_of_month <= 28):
+            raise HTTPException(status_code=400, detail="Indica el día del mes (1 a 28)")
+
 class UserUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     full_name: Optional[str] = None
     is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
     access_dashboard: Optional[bool] = None
     access_calls: Optional[bool] = None
     access_queues: Optional[bool] = None
@@ -30,54 +65,151 @@ class UserUpdate(BaseModel):
     access_reports: Optional[bool] = None
 
 @router.get("/list")
-async def list_users():
-    """Listar todos los usuarios"""
+async def list_users(admin: dict = Depends(require_admin)):
+    """Listar todos los usuarios (solo admin)"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT id, username, email, full_name, is_active, access_dashboard, access_calls, access_queues, access_agents, access_reports, created_at FROM users")
+    c.execute("SELECT id, username, email, full_name, is_active, is_admin, access_dashboard, access_calls, access_queues, access_agents, access_reports, must_change_password, created_at FROM users")
 
     # Convertir 0/1 a booleanos verdaderos
     users = []
     for row in c.fetchall():
         user_dict = dict(row)
         user_dict['is_active'] = bool(user_dict['is_active'])
+        user_dict['is_admin'] = bool(user_dict.get('is_admin', 0))
         user_dict['access_dashboard'] = bool(user_dict['access_dashboard'])
         user_dict['access_calls'] = bool(user_dict['access_calls'])
         user_dict['access_queues'] = bool(user_dict['access_queues'])
         user_dict['access_agents'] = bool(user_dict['access_agents'])
         user_dict['access_reports'] = bool(user_dict['access_reports'])
+        user_dict['must_change_password'] = bool(user_dict.get('must_change_password', 0))
         users.append(user_dict)
 
     conn.close()
     return {"success": True, "data": users}
 
 @router.post("/create")
-async def create_user(user: UserCreate):
-    """Crear nuevo usuario"""
+async def create_user(user: UserCreate, admin: dict = Depends(require_admin)):
+    """Crear nuevo usuario. Genera una contraseña temporal y la envía por correo;
+    el usuario deberá cambiarla en su primer ingreso (solo admin)."""
+    temp_password = generate_temp_password()
+    hashed_password = pwd_context.hash(temp_password)
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    hashed_password = pwd_context.hash(user.password)
-
     try:
         c.execute('''
-            INSERT INTO users (username, email, password, full_name, access_dashboard, access_calls, access_queues, access_agents, access_reports)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user.username, user.email, hashed_password, user.full_name,
+            INSERT INTO users (username, email, password, full_name, must_change_password, is_admin,
+                               access_dashboard, access_calls, access_queues, access_agents, access_reports)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+        ''', (user.username, user.email, hashed_password, user.full_name, int(user.is_admin),
               int(user.access_dashboard), int(user.access_calls), int(user.access_queues),
               int(user.access_agents), int(user.access_reports)))
         conn.commit()
         user_id = c.lastrowid
         conn.close()
-        return {"success": True, "message": "Usuario creado", "id": user_id}
-    except sqlite3.IntegrityError as e:
+    except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Usuario o email ya existe")
 
+    # Enviar credenciales por correo
+    email_sent = email_service.send_temp_password_email(
+        to_email=user.email, full_name=user.full_name,
+        username=user.username, temp_password=temp_password, is_new=True,
+    )
+
+    resp = {"success": True, "message": "Usuario creado", "id": user_id, "email_sent": email_sent}
+    if not email_sent:
+        # Fallback: el admin (autenticado) recibe la temporal para entregarla manualmente
+        resp["temp_password"] = temp_password
+        resp["message"] = "Usuario creado, pero no se pudo enviar el correo. Entrega la contraseña temporal manualmente."
+    return resp
+
+@router.get("/report-config")
+async def get_report_config(admin: dict = Depends(require_admin)):
+    """Destinatarios actuales de los reportes automáticos (solo admin)."""
+    return {"success": True, "data": {
+        "gerencia": settings_store.get_setting("report_recipients_gerencia", ""),
+        "administracion": settings_store.get_setting("report_recipients_admin", ""),
+    }}
+
+@router.put("/report-config")
+async def save_report_config(cfg: ReportConfig, admin: dict = Depends(require_admin)):
+    """Guardar destinatarios de los reportes automáticos (solo admin)."""
+    settings_store.set_setting("report_recipients_gerencia", cfg.gerencia.strip())
+    settings_store.set_setting("report_recipients_admin", cfg.administracion.strip())
+    return {"success": True, "message": "Configuración de envíos guardada"}
+
+
+# ---------- Programaciones de reportes (flexibles) ----------
+@router.get("/report-schedules")
+async def list_report_schedules(admin: dict = Depends(require_admin)):
+    """Listar todas las programaciones de envío (solo admin)."""
+    return {"success": True, "data": schedules_store.list_schedules()}
+
+
+@router.post("/report-schedules")
+async def create_report_schedule(sched: ScheduleIn, admin: dict = Depends(require_admin)):
+    """Crear una programación de envío (solo admin)."""
+    sched.validate_payload()
+    new_id = schedules_store.create(sched.dict())
+    return {"success": True, "message": "Programación creada", "id": new_id}
+
+
+@router.put("/report-schedules/{schedule_id}")
+async def update_report_schedule(schedule_id: int, sched: ScheduleIn, admin: dict = Depends(require_admin)):
+    """Actualizar una programación de envío (solo admin)."""
+    sched.validate_payload()
+    if not schedules_store.get(schedule_id):
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    schedules_store.update(schedule_id, sched.dict())
+    return {"success": True, "message": "Programación actualizada"}
+
+
+@router.delete("/report-schedules/{schedule_id}")
+async def delete_report_schedule(schedule_id: int, admin: dict = Depends(require_admin)):
+    """Eliminar una programación de envío (solo admin)."""
+    if not schedules_store.delete(schedule_id):
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    return {"success": True, "message": "Programación eliminada"}
+
+
+@router.post("/report-schedules/{schedule_id}/run-now")
+async def run_report_schedule_now(schedule_id: int, admin: dict = Depends(require_admin)):
+    """Enviar ahora el reporte de una programación (envío de prueba, solo admin)."""
+    sched = schedules_store.get(schedule_id)
+    if not sched:
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    try:
+        email_sent = report_mailer.run(sched["report_type"], sched.get("recipients") or "")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"No se pudo generar/enviar el reporte: {e}")
+    msg = "Reporte enviado" if email_sent else "No se pudo enviar (revisa destinatarios/SMTP)"
+    return {"success": True, "email_sent": email_sent, "message": msg}
+
+@router.post("/reset-password/{user_id}")
+async def reset_password(user_id: int, admin: dict = Depends(require_admin)):
+    """Restablecer la contraseña de un usuario: genera una temporal y la envía por correo (solo admin)."""
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    temp_password = set_temp_password(user_id)
+    email_sent = email_service.send_temp_password_email(
+        to_email=target['email'], full_name=target['full_name'],
+        username=target['username'], temp_password=temp_password, is_new=False,
+    )
+
+    resp = {"success": True, "message": "Contraseña restablecida", "email_sent": email_sent}
+    if not email_sent:
+        resp["temp_password"] = temp_password
+        resp["message"] = "Contraseña restablecida, pero no se pudo enviar el correo. Entrega la temporal manualmente."
+    return resp
+
 @router.put("/update/{user_id}")
-async def update_user(user_id: int, user: UserUpdate):
-    """Actualizar usuario"""
+async def update_user(user_id: int, user: UserUpdate, admin: dict = Depends(require_admin)):
+    """Actualizar usuario (solo admin)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -96,6 +228,9 @@ async def update_user(user_id: int, user: UserUpdate):
     if user.is_active is not None:
         updates.append("is_active = ?")
         params.append(int(user.is_active))
+    if user.is_admin is not None:
+        updates.append("is_admin = ?")
+        params.append(int(user.is_admin))
     if user.access_dashboard is not None:
         updates.append("access_dashboard = ?")
         params.append(int(user.access_dashboard))
@@ -125,8 +260,8 @@ async def update_user(user_id: int, user: UserUpdate):
     return {"success": True, "message": "Usuario actualizado"}
 
 @router.delete("/delete/{user_id}")
-async def delete_user(user_id: int):
-    """Eliminar usuario"""
+async def delete_user(user_id: int, admin: dict = Depends(require_admin)):
+    """Eliminar usuario (solo admin)"""
     if user_id == 1:
         raise HTTPException(status_code=400, detail="No se puede eliminar el usuario admin")
 
