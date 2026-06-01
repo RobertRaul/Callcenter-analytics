@@ -13,7 +13,11 @@ import {
   message,
   Card,
   Typography,
-  Divider
+  Divider,
+  Select,
+  Checkbox,
+  TimePicker,
+  InputNumber
 } from 'antd';
 import {
   PlusOutlined,
@@ -22,12 +26,47 @@ import {
   UserOutlined,
   MailOutlined,
   LockOutlined,
-  KeyOutlined
+  KeyOutlined,
+  SendOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { usersAPI } from '../services/api';
 import { MACSA_COLORS } from '../config/theme';
 
 const { Title, Text } = Typography;
+
+const REPORT_TYPE_LABELS = {
+  'daily': 'Digest diario operativo',
+  'weekly-exec': 'Resumen ejecutivo semanal',
+  'monthly': 'Reporte mensual de desempeño',
+  'weekly-agents': 'Semanal de agentes y colas',
+};
+
+const FREQ_LABELS = { daily: 'Diario', weekly: 'Semanal', monthly: 'Mensual' };
+
+const WEEKDAYS = [
+  { label: 'Lun', value: 0 },
+  { label: 'Mar', value: 1 },
+  { label: 'Mié', value: 2 },
+  { label: 'Jue', value: 3 },
+  { label: 'Vie', value: 4 },
+  { label: 'Sáb', value: 5 },
+  { label: 'Dom', value: 6 },
+];
+
+const describeWhen = (s) => {
+  if (s.freq === 'daily') return `Todos los días · ${s.time}`;
+  if (s.freq === 'weekly') {
+    const ds = (s.days || [])
+      .map((d) => WEEKDAYS.find((w) => w.value === d)?.label)
+      .filter(Boolean)
+      .join(', ');
+    return `Semanal (${ds || '—'}) · ${s.time}`;
+  }
+  if (s.freq === 'monthly') return `Mensual · día ${s.day_of_month || '—'} · ${s.time}`;
+  return s.time;
+};
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -36,13 +75,18 @@ const Users = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [form] = Form.useForm();
 
-  // Configuración de envíos de reportes
-  const [cfgForm] = Form.useForm();
-  const [savingCfg, setSavingCfg] = useState(false);
+  // Programaciones de envío de reportes
+  const [schedules, setSchedules] = useState([]);
+  const [schedLoading, setSchedLoading] = useState(false);
+  const [schedModalVisible, setSchedModalVisible] = useState(false);
+  const [editingSched, setEditingSched] = useState(null);
+  const [schedForm] = Form.useForm();
+  const [runningId, setRunningId] = useState(null);
+  const freqWatch = Form.useWatch('freq', schedForm);
 
   useEffect(() => {
     fetchUsers();
-    loadReportConfig();
+    fetchSchedules();
   }, []);
 
   const fetchUsers = async () => {
@@ -57,26 +101,162 @@ const Users = () => {
     }
   };
 
-  const loadReportConfig = async () => {
+  const fetchSchedules = async () => {
+    setSchedLoading(true);
     try {
-      const res = await usersAPI.getReportConfig();
-      cfgForm.setFieldsValue(res.data.data || {});
+      const res = await usersAPI.listSchedules();
+      setSchedules(res.data.data || []);
     } catch (error) {
-      // silencioso: si no es admin o falla, no bloquea la vista
+      message.error(error.message || 'Error al cargar las programaciones');
+    } finally {
+      setSchedLoading(false);
     }
   };
 
-  const handleSaveConfig = async (values) => {
-    setSavingCfg(true);
+  const handleNewSched = () => {
+    setEditingSched(null);
+    schedForm.resetFields();
+    schedForm.setFieldsValue({
+      report_type: 'daily',
+      freq: 'daily',
+      days: [],
+      time: dayjs('08:00', 'HH:mm'),
+      enabled: true,
+    });
+    setSchedModalVisible(true);
+  };
+
+  const handleEditSched = (s) => {
+    setEditingSched(s);
+    schedForm.setFieldsValue({
+      name: s.name,
+      report_type: s.report_type,
+      freq: s.freq,
+      days: s.days || [],
+      day_of_month: s.day_of_month || undefined,
+      time: s.time ? dayjs(s.time, 'HH:mm') : null,
+      recipients: s.recipients || '',
+      enabled: !!s.enabled,
+    });
+    setSchedModalVisible(true);
+  };
+
+  const handleSubmitSched = async (values) => {
+    const payload = {
+      name: values.name || '',
+      report_type: values.report_type,
+      freq: values.freq,
+      days: values.freq === 'weekly' ? (values.days || []) : [],
+      day_of_month: values.freq === 'monthly' ? (values.day_of_month || null) : null,
+      time: values.time ? values.time.format('HH:mm') : '',
+      recipients: values.recipients || '',
+      enabled: values.enabled !== false,
+    };
     try {
-      await usersAPI.saveReportConfig(values);
-      message.success('Configuración de envíos guardada');
+      if (editingSched) {
+        await usersAPI.updateSchedule(editingSched.id, payload);
+        message.success('Programación actualizada');
+      } else {
+        await usersAPI.createSchedule(payload);
+        message.success('Programación creada');
+      }
+      setSchedModalVisible(false);
+      fetchSchedules();
     } catch (error) {
-      message.error(error.response?.data?.detail || 'No se pudo guardar la configuración');
-    } finally {
-      setSavingCfg(false);
+      message.error(error.message || 'No se pudo guardar la programación');
     }
   };
+
+  const handleDeleteSched = async (id) => {
+    try {
+      await usersAPI.deleteSchedule(id);
+      message.success('Programación eliminada');
+      fetchSchedules();
+    } catch (error) {
+      message.error(error.message || 'Error al eliminar la programación');
+    }
+  };
+
+  const handleRunNow = async (s) => {
+    setRunningId(s.id);
+    try {
+      const res = await usersAPI.runScheduleNow(s.id);
+      if (res.data?.email_sent) {
+        message.success('Reporte enviado correctamente');
+      } else {
+        message.warning(res.data?.message || 'No se pudo enviar (revisa destinatarios/SMTP)');
+      }
+    } catch (error) {
+      message.error(error.message || 'Error al enviar el reporte');
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  const scheduleColumns = [
+    {
+      title: 'Nombre',
+      dataIndex: 'name',
+      render: (text, r) => <strong>{text || REPORT_TYPE_LABELS[r.report_type] || r.report_type}</strong>,
+    },
+    {
+      title: 'Tipo de reporte',
+      dataIndex: 'report_type',
+      render: (t) => REPORT_TYPE_LABELS[t] || t,
+    },
+    {
+      title: 'Cuándo',
+      render: (_, r) => (
+        <Space>
+          <ClockCircleOutlined style={{ color: MACSA_COLORS.gray }} />
+          {describeWhen(r)}
+        </Space>
+      ),
+    },
+    {
+      title: 'Destinatarios',
+      dataIndex: 'recipients',
+      render: (t) => <Text style={{ fontSize: 13 }}>{t || '—'}</Text>,
+    },
+    {
+      title: 'Estado',
+      dataIndex: 'enabled',
+      align: 'center',
+      render: (en) => <Tag color={en ? 'success' : 'default'}>{en ? 'Activo' : 'Pausado'}</Tag>,
+    },
+    {
+      title: 'Acciones',
+      align: 'center',
+      render: (_, r) => (
+        <Space>
+          <Button type="link" icon={<EditOutlined />} onClick={() => handleEditSched(r)}>
+            Editar
+          </Button>
+          <Popconfirm
+            title="¿Enviar este reporte ahora?"
+            description="Se generará y enviará de inmediato a los destinatarios."
+            onConfirm={() => handleRunNow(r)}
+            okText="Sí, enviar"
+            cancelText="Cancelar"
+          >
+            <Button type="link" icon={<SendOutlined />} loading={runningId === r.id}>
+              Enviar ahora
+            </Button>
+          </Popconfirm>
+          <Popconfirm
+            title="¿Eliminar esta programación?"
+            onConfirm={() => handleDeleteSched(r.id)}
+            okText="Sí, eliminar"
+            cancelText="Cancelar"
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              Eliminar
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   const handleCreate = () => {
     setEditingUser(null);
@@ -333,30 +513,104 @@ const Users = () => {
 
     <Card
       style={{ marginTop: 24 }}
-      title={<span><MailOutlined /> Configuración de envíos de reportes</span>}
+      title={<span><MailOutlined /> Programaciones de reportes</span>}
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleNewSched}>
+          Nueva programación
+        </Button>
+      }
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-        Correos que reciben los reportes automáticos (separa varios con coma). Los cambios se aplican de inmediato.
+        Define qué reporte enviar, qué días y a qué hora, y a qué correos. Los cambios se aplican de inmediato
+        (el envío se ejecuta automáticamente a la hora indicada). Usa "Enviar ahora" para una prueba inmediata.
       </Text>
-      <Form form={cfgForm} layout="vertical" onFinish={handleSaveConfig} style={{ maxWidth: 640 }}>
-        <Form.Item
-          name="gerencia"
-          label="Gerencia General"
-          tooltip="Reciben el resumen ejecutivo semanal y el reporte mensual"
-        >
-          <Input placeholder="gerencia@macsalud.com, direccion@macsalud.com" />
-        </Form.Item>
-        <Form.Item
-          name="administracion"
-          label="Administración"
-          tooltip="Reciben el digest diario y el reporte semanal de agentes/colas"
-        >
-          <Input placeholder="administracion@macsalud.com" />
-        </Form.Item>
-        <Button type="primary" htmlType="submit" loading={savingCfg}>
-          Guardar configuración
-        </Button>
-      </Form>
+
+      <Table
+        columns={scheduleColumns}
+        dataSource={schedules}
+        rowKey="id"
+        loading={schedLoading}
+        pagination={false}
+      />
+
+      <Modal
+        title={editingSched ? 'Editar programación' : 'Nueva programación'}
+        open={schedModalVisible}
+        onCancel={() => setSchedModalVisible(false)}
+        onOk={() => schedForm.submit()}
+        okText="Guardar"
+        cancelText="Cancelar"
+      >
+        <Form form={schedForm} layout="vertical" onFinish={handleSubmitSched}>
+          <Form.Item name="name" label="Nombre (opcional)">
+            <Input placeholder="Ej. Ejecutivo semanal gerencia" />
+          </Form.Item>
+
+          <Form.Item
+            name="report_type"
+            label="Tipo de reporte"
+            rules={[{ required: true, message: 'Selecciona el tipo de reporte' }]}
+          >
+            <Select
+              options={Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="freq"
+            label="Frecuencia"
+            rules={[{ required: true, message: 'Selecciona la frecuencia' }]}
+          >
+            <Select
+              options={Object.entries(FREQ_LABELS).map(([value, label]) => ({ value, label }))}
+            />
+          </Form.Item>
+
+          {freqWatch === 'weekly' && (
+            <Form.Item
+              name="days"
+              label="Días de envío"
+              rules={[{ required: true, message: 'Selecciona al menos un día' }]}
+            >
+              <Checkbox.Group options={WEEKDAYS} />
+            </Form.Item>
+          )}
+
+          {freqWatch === 'monthly' && (
+            <Form.Item
+              name="day_of_month"
+              label="Día del mes (1 a 28)"
+              rules={[{ required: true, message: 'Indica el día del mes' }]}
+            >
+              <InputNumber min={1} max={28} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
+
+          <Form.Item
+            name="time"
+            label="Hora de envío"
+            rules={[{ required: true, message: 'Indica la hora' }]}
+          >
+            <TimePicker format="HH:mm" minuteStep={5} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="recipients"
+            label="Destinatarios"
+            tooltip="Correos separados por coma"
+            rules={[{ required: true, message: 'Indica al menos un destinatario' }]}
+          >
+            <Input.TextArea
+              rows={2}
+              placeholder="gerencia@macsalud.com, direccion@macsalud.com"
+            />
+          </Form.Item>
+
+          <Form.Item name="enabled" label="Activa" valuePropName="checked" style={{ marginBottom: 0 }}>
+            <Switch checkedChildren="Sí" unCheckedChildren="No" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Card>
     </>
   );

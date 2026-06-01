@@ -63,6 +63,14 @@ api.interceptors.response.use(
         console.error('[API Response Error]', error.response || error);
 
         if (error.response) {
+            // Sesión vencida / token inválido: limpiar y forzar re-login
+            if (error.response.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                if (window.location.pathname !== '/') {
+                    window.location.assign('/');
+                }
+            }
             // Error con respuesta del servidor
             const message = error.response.data?.message || error.response.data?.error || 'Error del servidor';
             throw new Error(message);
@@ -282,6 +290,12 @@ export const usersAPI = {
   resetPassword: (id) => api.post(`/users/reset-password/${id}`),
   getReportConfig: () => api.get('/users/report-config'),
   saveReportConfig: (data) => api.put('/users/report-config', data),
+  // Programaciones de reportes (flexibles)
+  listSchedules: () => api.get('/users/report-schedules'),
+  createSchedule: (data) => api.post('/users/report-schedules', data),
+  updateSchedule: (id, data) => api.put(`/users/report-schedules/${id}`, data),
+  deleteSchedule: (id) => api.delete(`/users/report-schedules/${id}`),
+  runScheduleNow: (id) => api.post(`/users/report-schedules/${id}/run-now`),
 };
 
 // Autenticación

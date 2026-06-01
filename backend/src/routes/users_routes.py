@@ -1,11 +1,14 @@
 # routes/users_routes.py
+import re
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import sqlite3
 from services.auth_service import pwd_context, DB_PATH, generate_temp_password, set_temp_password, get_user_by_id
 from services import email_service
 from services import settings_store
+from services import schedules_store
+from services import report_mailer
 from dependencies import require_admin
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
@@ -24,6 +27,30 @@ class UserCreate(BaseModel):
 class ReportConfig(BaseModel):
     gerencia: str = ""
     administracion: str = ""
+
+class ScheduleIn(BaseModel):
+    name: str = ""
+    report_type: str
+    freq: str                     # 'daily' | 'weekly' | 'monthly'
+    days: List[int] = []          # 0=Lun..6=Dom (solo freq='weekly')
+    day_of_month: Optional[int] = None  # 1..28 (solo freq='monthly')
+    time: str                     # 'HH:MM'
+    recipients: str = ""          # correos separados por coma
+    enabled: bool = True
+
+    def validate_payload(self):
+        if self.report_type not in schedules_store.REPORT_TYPES:
+            raise HTTPException(status_code=400, detail=f"Tipo de reporte inválido. Opciones: {list(schedules_store.REPORT_TYPES)}")
+        if self.freq not in schedules_store.FREQS:
+            raise HTTPException(status_code=400, detail=f"Frecuencia inválida. Opciones: {list(schedules_store.FREQS)}")
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", (self.time or "").strip()):
+            raise HTTPException(status_code=400, detail="Hora inválida (formato HH:MM, 24h)")
+        if not [e for e in (self.recipients or "").split(",") if e.strip()]:
+            raise HTTPException(status_code=400, detail="Debes indicar al menos un destinatario")
+        if self.freq == "weekly" and not self.days:
+            raise HTTPException(status_code=400, detail="Selecciona al menos un día de la semana")
+        if self.freq == "monthly" and not (self.day_of_month and 1 <= self.day_of_month <= 28):
+            raise HTTPException(status_code=400, detail="Indica el día del mes (1 a 28)")
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
@@ -113,6 +140,53 @@ async def save_report_config(cfg: ReportConfig, admin: dict = Depends(require_ad
     settings_store.set_setting("report_recipients_gerencia", cfg.gerencia.strip())
     settings_store.set_setting("report_recipients_admin", cfg.administracion.strip())
     return {"success": True, "message": "Configuración de envíos guardada"}
+
+
+# ---------- Programaciones de reportes (flexibles) ----------
+@router.get("/report-schedules")
+async def list_report_schedules(admin: dict = Depends(require_admin)):
+    """Listar todas las programaciones de envío (solo admin)."""
+    return {"success": True, "data": schedules_store.list_schedules()}
+
+
+@router.post("/report-schedules")
+async def create_report_schedule(sched: ScheduleIn, admin: dict = Depends(require_admin)):
+    """Crear una programación de envío (solo admin)."""
+    sched.validate_payload()
+    new_id = schedules_store.create(sched.dict())
+    return {"success": True, "message": "Programación creada", "id": new_id}
+
+
+@router.put("/report-schedules/{schedule_id}")
+async def update_report_schedule(schedule_id: int, sched: ScheduleIn, admin: dict = Depends(require_admin)):
+    """Actualizar una programación de envío (solo admin)."""
+    sched.validate_payload()
+    if not schedules_store.get(schedule_id):
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    schedules_store.update(schedule_id, sched.dict())
+    return {"success": True, "message": "Programación actualizada"}
+
+
+@router.delete("/report-schedules/{schedule_id}")
+async def delete_report_schedule(schedule_id: int, admin: dict = Depends(require_admin)):
+    """Eliminar una programación de envío (solo admin)."""
+    if not schedules_store.delete(schedule_id):
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    return {"success": True, "message": "Programación eliminada"}
+
+
+@router.post("/report-schedules/{schedule_id}/run-now")
+async def run_report_schedule_now(schedule_id: int, admin: dict = Depends(require_admin)):
+    """Enviar ahora el reporte de una programación (envío de prueba, solo admin)."""
+    sched = schedules_store.get(schedule_id)
+    if not sched:
+        raise HTTPException(status_code=404, detail="Programación no encontrada")
+    try:
+        email_sent = report_mailer.run(sched["report_type"], sched.get("recipients") or "")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"No se pudo generar/enviar el reporte: {e}")
+    msg = "Reporte enviado" if email_sent else "No se pudo enviar (revisa destinatarios/SMTP)"
+    return {"success": True, "email_sent": email_sent, "message": msg}
 
 @router.post("/reset-password/{user_id}")
 async def reset_password(user_id: int, admin: dict = Depends(require_admin)):

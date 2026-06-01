@@ -45,6 +45,19 @@ def _recipients(group: str):
     return [e.strip() for e in (raw or "").split(",") if e.strip()]
 
 
+def _resolve_recipients(recipients, group: str):
+    """Resuelve la lista final de destinatarios.
+
+    Si `recipients` viene dado (lista o CSV no vacío), se usa tal cual; si no,
+    se cae al grupo histórico (`gerencia`/`admin`) por compatibilidad.
+    """
+    if recipients:
+        if isinstance(recipients, str):
+            return [e.strip() for e in recipients.split(",") if e.strip()]
+        return [str(e).strip() for e in recipients if str(e).strip()]
+    return _recipients(group)
+
+
 def _date_range(start, end):
     return {"start_date": start.strftime("%d/%m/%Y"), "end_date": end.strftime("%d/%m/%Y")}
 
@@ -94,10 +107,10 @@ def _general_stats(start, end):
 
 
 # ---------- reportes ----------
-def daily_digest():
+def daily_digest(recipients=None):
     """Digest diario operativo (día anterior) -> Administración."""
     start, end = _yesterday()
-    recipients = _recipients("admin")
+    recipients = _resolve_recipients(recipients, "admin")
     if not recipients:
         logger.warning("Digest diario: sin destinatarios (REPORT_RECIPIENTS_ADMIN vacío)")
         return False
@@ -109,10 +122,10 @@ def daily_digest():
         recipients, f"[MACSA] Digest diario operativo — {dr['start_date']}", html, files)
 
 
-def weekly_executive():
+def weekly_executive(recipients=None):
     """Resumen ejecutivo semanal -> Gerencia General."""
     start, end = _last_7_days()
-    recipients = _recipients("gerencia")
+    recipients = _resolve_recipients(recipients, "gerencia")
     if not recipients:
         logger.warning("Resumen semanal: sin destinatarios (REPORT_RECIPIENTS_GERENCIA vacío)")
         return False
@@ -124,10 +137,10 @@ def weekly_executive():
         recipients, f"[MACSA] Resumen ejecutivo semanal — {dr['start_date']} a {dr['end_date']}", html, files)
 
 
-def monthly():
+def monthly(recipients=None):
     """Reporte mensual de desempeño -> Gerencia General."""
     start, end = _prev_month()
-    recipients = _recipients("gerencia")
+    recipients = _resolve_recipients(recipients, "gerencia")
     if not recipients:
         logger.warning("Reporte mensual: sin destinatarios (REPORT_RECIPIENTS_GERENCIA vacío)")
         return False
@@ -139,10 +152,10 @@ def monthly():
         recipients, f"[MACSA] Reporte mensual de desempeño — {dr['start_date']} a {dr['end_date']}", html, files)
 
 
-def weekly_agents():
+def weekly_agents(recipients=None):
     """Semanal de agentes + colas (abandono/SLA) -> Administración."""
     start, end = _last_7_days()
-    recipients = _recipients("admin")
+    recipients = _resolve_recipients(recipients, "admin")
     if not recipients:
         logger.warning("Semanal de agentes: sin destinatarios (REPORT_RECIPIENTS_ADMIN vacío)")
         return False
@@ -167,8 +180,8 @@ REPORTS = {
 }
 
 
-def run(report_key: str) -> bool:
+def run(report_key: str, recipients=None) -> bool:
     fn = REPORTS.get(report_key)
     if not fn:
         raise ValueError(f"Reporte desconocido: {report_key}. Opciones: {list(REPORTS)}")
-    return fn()
+    return fn(recipients)

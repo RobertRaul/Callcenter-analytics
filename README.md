@@ -94,13 +94,14 @@ Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
 │   │   │   ├── reports_routes.py    # 4 endpoints de reportes
 │   │   │   ├── recordings_routes.py # 5 endpoints de grabaciones
 │   │   │   ├── auth_routes.py       # 2 endpoints de autenticación
-│   │   │   ├── users_routes.py      # 4 endpoints de usuarios
+│   │   │   ├── users_routes.py      # Usuarios + programaciones de reportes (admin)
 │   │   │   └── analisis_routes.py   # 7 endpoints de análisis ejecutivo
 │   │   ├── services/
 │   │   │   ├── auth_service.py         # Autenticación JWT + bcrypt + contraseñas temporales
 │   │   │   ├── email_service.py        # Envío SMTP (Gmail) + adjuntos
 │   │   │   ├── report_mailer.py        # Reportes automáticos por correo (PDF+Excel)
 │   │   │   ├── settings_store.py       # Config editable en runtime (app_settings)
+│   │   │   ├── schedules_store.py      # Programaciones de reportes (tabla report_schedules)
 │   │   │   ├── reports_service.py      # Generación Excel/PDF con branding
 │   │   │   ├── recordings_service.py   # Acceso a grabaciones vía SSH/SCP
 │   │   │   └── optimized_stats_service.py  # Queries optimizadas con vistas MySQL
@@ -110,7 +111,8 @@ Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
 │   │   │   └── schemas.py           # Pydantic schemas
 │   │   ├── dependencies.py          # Dependencias de auth (get_current_user, require_admin)
 │   │   └── main.py                  # Punto de entrada FastAPI
-│   ├── send_report.py               # CLI de reportes por correo (lo invoca cron)
+│   ├── send_report.py               # CLI de un reporte puntual por su clave
+│   ├── dispatch_reports.py          # Despachador de programaciones (lo invoca cron cada minuto)
 │   ├── migrations/
 │   │   ├── 001_performance_optimization.sql  # Vistas MySQL + índices
 │   │   └── deploy.sh                          # Script de deployment
@@ -241,17 +243,31 @@ Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
 - **Rol Administrador** asignable desde el panel (switch) y columna de rol en la tabla.
 - **Envío SMTP** vía Google Workspace (Gmail). Si el correo no está configurado, la contraseña temporal se muestra en pantalla como respaldo.
 
-### 11. Reportes Automáticos por Correo
-Reportes programados que se envían solos a gerencia y administración, con **PDF + Excel adjuntos** y un **resumen de KPIs** en el cuerpo:
+### 11. Reportes Automáticos por Correo (programaciones configurables)
+Reportes que se envían solos, con **PDF + Excel adjuntos** y un **resumen de KPIs** en el cuerpo.
+Todo el envío se configura **desde el panel** `/users → "Programaciones de reportes"`, sin tocar archivos
+ni terminal. Cada programación define **qué reporte, qué días, a qué hora y a qué correos**, y se puede
+activar/pausar o disparar al instante con **"Enviar ahora"**.
 
-| Reporte | Frecuencia | Destinatario |
+**Tipos de reporte disponibles** (el dato que contiene cada uno):
+
+| Tipo | Contenido | Periodo de datos |
 |---|---|---|
-| Digest Diario Operativo | Diario 7:30 am | Administración |
-| Resumen Ejecutivo Semanal | Lunes 8:00 am | Gerencia General |
-| Semanal de Agentes + Colas (SLA/Abandono) | Lunes 8:05 am | Administración |
-| Reporte Mensual de Desempeño | Día 1, 8:00 am | Gerencia General |
+| Digest Diario Operativo | KPIs generales + resumen del día | Día anterior |
+| Resumen Ejecutivo Semanal | KPIs generales | Últimos 7 días |
+| Semanal de Agentes + Colas (SLA/Abandono) | Agentes + colas | Últimos 7 días |
+| Reporte Mensual de Desempeño | KPIs generales | Mes anterior |
 
-Los **destinatarios se administran desde el panel** `/users → "Configuración de envíos"` (se guardan en `users.db`); no requiere tocar archivos ni terminal. La programación está en cron (`/etc/cron.d/callcenter-reports`).
+**Frecuencia configurable por programación:** Diario, Semanal (días Lun–Dom a elección) o Mensual (día del mes),
+con hora exacta (HH:MM) y lista libre de destinatarios.
+
+**Cómo funciona por dentro:**
+- Las programaciones se guardan en `users.db` (tabla **`report_schedules`**, gestionada por `schedules_store.py`).
+- Un **único job de cron** (`/etc/cron.d/callcenter-reports`) ejecuta `dispatch_reports.py` **cada minuto**;
+  el despachador dispara las programaciones cuyo día/hora coinciden y evita duplicados con `last_run` (máximo un envío por día por programación).
+- En el primer arranque la tabla se **siembra** con las 4 programaciones clásicas (digest diario 07:30, ejecutivo
+  semanal lunes 08:00, semanal de agentes lunes 08:05, mensual día 1 08:00).
+- `send_report.py <clave>` sigue disponible para enviar un reporte puntual desde la terminal.
 
 ---
 
@@ -501,14 +517,16 @@ SMTP_FROM_NAME=Call Center Analytics - MACSA
 APP_BASE_URL=https://metricas.macsalud.com
 
 # Destinatarios de reportes (RESPALDO opcional). Lo normal es administrarlos
-# desde el panel /users → "Configuración de envíos" (se guardan en la BD).
+# desde el panel /users → "Programaciones de reportes" (se guardan en la BD,
+# tabla report_schedules). Estos valores solo se usan como fallback si una
+# programación no trae destinatarios propios.
 REPORT_RECIPIENTS_GERENCIA=
 REPORT_RECIPIENTS_ADMIN=
 ```
 
 > ⚠️ El binding del servidor en producción NO se controla por `SERVER_HOST` del `.env`, sino por el `ExecStart` del servicio systemd (`uvicorn --host 127.0.0.1 --workers 8`).
 >
-> 📧 **Destinatarios de reportes:** se editan desde el panel **/users → "Configuración de envíos"** (se guardan en `users.db`, tabla `app_settings`). Los valores del `.env` solo se usan como respaldo si la BD está vacía.
+> 📧 **Reportes por correo:** se configuran desde el panel **/users → "Programaciones de reportes"** (qué reporte, días, hora y destinatarios; se guardan en `users.db`, tabla `report_schedules`). Los `REPORT_RECIPIENTS_*` del `.env` solo se usan como respaldo.
 
 ### Variables de Entorno Frontend
 
@@ -662,16 +680,25 @@ GET    /api/analisis/mapa-calor-semanal      # Mapa de calor 7×24
 GET    /api/analisis/sla-cumplimiento        # Análisis de SLA
 ```
 
-### Usuarios (7 endpoints - Solo Admin)
+### Usuarios y programaciones de reportes (Solo Admin)
 ```
-GET    /api/users/list                   # Lista usuarios
-POST   /api/users/create                 # Crear usuario (genera temporal + envía correo)
-PUT    /api/users/update/{id}            # Actualizar usuario (incluye is_admin)
-DELETE /api/users/delete/{id}            # Eliminar usuario
-POST   /api/users/reset-password/{id}    # Restablecer contraseña (envía temporal)
-GET    /api/users/report-config          # Destinatarios de reportes automáticos
-PUT    /api/users/report-config          # Guardar destinatarios (panel de envíos)
+GET    /api/users/list                              # Lista usuarios
+POST   /api/users/create                            # Crear usuario (genera temporal + envía correo)
+PUT    /api/users/update/{id}                       # Actualizar usuario (incluye is_admin)
+DELETE /api/users/delete/{id}                       # Eliminar usuario
+POST   /api/users/reset-password/{id}               # Restablecer contraseña (envía temporal)
+GET    /api/users/report-config                     # (Legado) destinatarios de respaldo gerencia/admin
+PUT    /api/users/report-config                     # (Legado) guardar destinatarios de respaldo
+GET    /api/users/report-schedules                  # Listar programaciones de reportes
+POST   /api/users/report-schedules                  # Crear programación
+PUT    /api/users/report-schedules/{id}             # Actualizar programación
+DELETE /api/users/report-schedules/{id}             # Eliminar programación
+POST   /api/users/report-schedules/{id}/run-now     # Enviar ese reporte ahora (prueba)
 ```
+
+> 🔐 **Nota de autenticación:** solo `users_routes.py` y `auth_routes.py` exigen JWT. El resto de endpoints
+> es de acceso interno sin token. El frontend, ante un **401** (token vencido), limpia la sesión y redirige
+> al login automáticamente.
 
 ### Utilidades
 ```
