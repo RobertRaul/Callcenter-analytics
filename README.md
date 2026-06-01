@@ -32,7 +32,7 @@ Sistema web moderno que proporciona análisis avanzado de llamadas, colas y agen
 - **html2canvas** 1.4.1 - Captura de gráficos
 
 **Deployment:**
-- **Systemd** - Servicio del backend (Uvicorn, **8 workers**, escuchando solo en `127.0.0.1:8000`)
+- **Systemd** - Servicio del backend (Uvicorn, **8 workers**, escuchando solo en `127.0.0.1:<PUERTO-API>`)
 - **Nginx** - Reverse proxy + servidor estático + **TLS (HTTPS)**
 - **Let's Encrypt** - Certificado válido con renovación automática
 - **ufw** - Firewall de host
@@ -50,23 +50,23 @@ El sistema es accesible de forma **segura desde Internet** en `https://metricas.
                  Internet
                     │  https://metricas.macsalud.com
                     ▼
-        190.119.206.67  (ISP Claro)
+        <IP-PUBLICA>  (ISP)
                     │
                     ▼
-        FortiGate  →  MikroTik (DNAT 443/80 + SrcNAT)
+        FortiGate  →  MikroTik (DNAT + SrcNAT)
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Servidor svrmetrics  (192.168.11.3)                                       │
+│  Servidor de la aplicación                                       │
 │                                                                            │
 │   Nginx :443 (TLS, rate-limit, headers, /docs solo LAN)                    │
 │      ├── /            → React build (SPA, responsive)                       │
-│      └── /api         → Uvicorn 127.0.0.1:8000  (FastAPI, 8 workers)        │
+│      └── /api         → Uvicorn 127.0.0.1:<PUERTO-API>  (FastAPI, 8 workers)        │
 │                                   │                                         │
 └───────────────────────────────────┼─────────────────────────────────────-─┘
                                      │  MySQL + SSH
                                      ▼
-                         Issabel Server (192.168.3.2)
+                         Issabel Server (<SERVIDOR-ISSABEL>)
                          queue_log DB + Grabaciones
 
 Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
@@ -232,7 +232,7 @@ Consumidores:  navegador web (LAN/Internet)  ·  App Windows (Internet, JWT)
 ### 9. Seguridad y Acceso por Internet
 - **Acceso público seguro** en `https://metricas.macsalud.com` con **certificado Let's Encrypt** válido (renovación automática).
 - **Backend aislado:** Uvicorn escucha solo en `127.0.0.1`; Nginx es el único punto de entrada.
-- **Firewall (ufw):** desde Internet solo 22/80/443; MySQL (3306) y la API (8000) no son accesibles desde fuera.
+- **Firewall (ufw):** desde Internet solo SSH/HTTP/HTTPS; los puertos internos de MySQL y de la API no son accesibles desde fuera.
 - **Endurecimiento de Nginx:** rate-limiting (general y anti fuerza-bruta en login), bloqueo de rutas de bots, cabeceras de seguridad (HSTS, X-Frame-Options, etc.) y documentación (`/docs`) restringida a la red interna.
 - **Autenticación JWT** con secreto robusto; consumible por la app de escritorio Windows mediante `Authorization: Bearer <token>`.
 
@@ -308,11 +308,11 @@ cd src
 python main.py
 ```
 
-El backend estará disponible en: `http://192.168.11.3:8000`
+El backend estará disponible en: `http://<SERVIDOR-APP>:<PUERTO-API>`
 
 **Documentación interactiva:**
-- Swagger UI: `http://192.168.11.3:8000/docs`
-- ReDoc: `http://192.168.11.3:8000/redoc`
+- Swagger UI: `http://<SERVIDOR-APP>:<PUERTO-API>/docs`
+- ReDoc: `http://<SERVIDOR-APP>:<PUERTO-API>/redoc`
 
 ### Instalación del Frontend
 
@@ -329,7 +329,7 @@ nano .env
 
 # 4. Modo desarrollo
 npm start
-# Abre http://localhost:3000
+# Abre http://localhost:<PUERTO-DEV>
 
 # 5. Build para producción
 npm run build
@@ -388,7 +388,7 @@ Config real: **`/etc/nginx/sites-available/callcenter`** (symlink en `sites-enab
 # :80 -> solo reto ACME + redirección a HTTPS
 server {
     listen 80;
-    server_name metricas.macsalud.com www.metricas.macsalud.com 192.168.11.3;
+    server_name metricas.macsalud.com www.metricas.macsalud.com <SERVIDOR-APP>;
     location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 301 https://$host$request_uri; }
 }
@@ -412,15 +412,15 @@ server {
     # Bloqueo de rutas de bots (cierra conexión)
     location ~* "(\.env|\.git|wp-login|wp-admin|wordpress|phpmyadmin|solr|cgi-bin)" { return 444; }
 
-    # Docs: SOLO red interna (Internet aparece como 192.168.2.23 por el SrcNAT)
-    location /docs { deny 192.168.2.23; allow 192.168.2.0/24; allow 192.168.3.0/24; allow 192.168.11.0/24; deny all; proxy_pass http://127.0.0.1:8000; }
+    # Docs: SOLO red interna (Internet aparece como <IP-NAT-INTERNA> por el SrcNAT)
+    location /docs { deny <IP-NAT-INTERNA>; allow <SUBRED-INTERNA>; allow <SUBRED-INTERNA>; allow <SUBRED-SERVIDORES>; deny all; proxy_pass http://127.0.0.1:<PUERTO-API>; }
     # (igual para /redoc y /openapi.json)
 
     # Login con límite anti fuerza-bruta
-    location /api/auth { limit_req zone=auth_zone burst=10 nodelay; proxy_pass http://127.0.0.1:8000; }
+    location /api/auth { limit_req zone=auth_zone burst=10 nodelay; proxy_pass http://127.0.0.1:<PUERTO-API>; }
 
     # API
-    location /api { limit_req zone=api_zone burst=60 nodelay; proxy_pass http://127.0.0.1:8000; }
+    location /api { limit_req zone=api_zone burst=60 nodelay; proxy_pass http://127.0.0.1:<PUERTO-API>; }
 
     # Frontend SPA (build de React)
     location / { root /opt/callcenter-analytics/frontend/build; try_files $uri $uri/ /index.html; }
@@ -446,9 +446,9 @@ tail -f /var/log/nginx/access.log /var/log/nginx/error.log
 # --- Firewall: Internet solo 22/80/443; subredes internas con acceso completo ---
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow from 192.168.2.0/24      # usuarios
-ufw allow from 192.168.3.0/24      # usuarios / Issabel
-ufw allow from 192.168.11.0/24     # VLAN servidores
+ufw allow from <SUBRED-INTERNA>      # usuarios
+ufw allow from <SUBRED-INTERNA>      # usuarios / Issabel
+ufw allow from <SUBRED-SERVIDORES>     # VLAN servidores
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
@@ -463,7 +463,7 @@ certbot certonly --webroot -w /var/www/certbot \
 certbot renew --dry-run
 ```
 
-> **Red:** el acceso entra por la IP pública de Claro `190.119.206.67` → FortiGate → MikroTik (DNAT 443/80 + SrcNAT) → `192.168.11.3`. Por el SrcNAT, todo el tráfico de Internet llega a Nginx con IP `192.168.2.23` (de ahí el `deny 192.168.2.23` en `/docs`).
+> **Red:** el acceso entra por la IP pública `<IP-PUBLICA>` → FortiGate → MikroTik (DNAT + SrcNAT) → `<SERVIDOR-APP>`. Por el SrcNAT, todo el tráfico de Internet llega a Nginx con IP `<IP-NAT-INTERNA>` (de ahí el `deny <IP-NAT-INTERNA>` en `/docs`).
 
 ### Proceso de Actualización
 
@@ -493,14 +493,14 @@ La configuración viva está en **`/opt/callcenter-analytics/backend/.env`** (gi
 
 ```bash
 # Base de datos Issabel
-DB_HOST=192.168.3.2
-DB_PORT=3306
+DB_HOST=<SERVIDOR-ISSABEL>
+DB_PORT=<PUERTO-DB>
 DB_USER_QUEUELOG=asteriskuser
 DB_PASSWORD_QUEUELOG=<contraseña>
 DB_NAME_CDR=asteriskcdrdb
 
 # CORS — orígenes permitidos (la app de escritorio no usa CORS)
-CORS_ORIGINS=["https://metricas.macsalud.com","https://192.168.11.3","http://192.168.11.3"]
+CORS_ORIGINS=["https://metricas.macsalud.com","https://<SERVIDOR-APP>","http://<SERVIDOR-APP>"]
 
 # JWT — secreto REAL y aleatorio (generar con: openssl rand -hex 32)
 SECRET_KEY=<64-hex-aleatorio>
@@ -545,7 +545,7 @@ REACT_APP_API_URL=/api
 El sistema tiene **dos modos de operación**:
 
 **1. Modo MySQL (Prioritario):**
-- Conecta a `asteriskcdrdb.queue_log` en servidor Issabel (192.168.3.2)
+- Conecta a `asteriskcdrdb.queue_log` en servidor Issabel (<SERVIDOR-ISSABEL>)
 - Datos sincronizados por daemon `queue-log-sync.service`
 - Índices y vistas optimizadas para queries ultrarrápidas
 - Queries de 12 minutos → <1 segundo
@@ -604,7 +604,7 @@ Las grabaciones de audio se almacenan en el servidor Issabel:
 **Configuración SSH:**
 ```python
 # En recordings_service.py
-SSH_HOST = "192.168.3.2"
+SSH_HOST = "<SERVIDOR-ISSABEL>"
 SSH_USER = "root"
 SSH_PASSWORD = "<password-ssh>"
 RECORDINGS_PATH = "/var/spool/asterisk/monitor"
@@ -747,7 +747,7 @@ journalctl -u callcenter-api -f
 ls -la /var/log/asterisk/queue_log
 
 # Probar conexión MySQL
-mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb -e "SELECT COUNT(*) FROM queue_log;"
+mysql -h <SERVIDOR-ISSABEL> -u asteriskuser -p asteriskcdrdb -e "SELECT COUNT(*) FROM queue_log;"
 
 # Verificar permisos
 sudo chown root:root /opt/callcenter-analytics/backend/users.db
@@ -758,7 +758,7 @@ sudo chmod 644 /opt/callcenter-analytics/backend/users.db
 
 ```bash
 # Verificar que el backend esté corriendo
-curl http://127.0.0.1:8000/health   # 8000 está bound a localhost (Nginx es el frente)
+curl http://127.0.0.1:<PUERTO-API>/health   # el backend solo escucha en localhost (Nginx es el frente)
 
 # Verificar CORS (revisar consola del navegador F12)
 # Verificar configuración de REACT_APP_API_URL
@@ -770,10 +770,10 @@ curl http://127.0.0.1:8000/health   # 8000 está bound a localhost (Nginx es el 
 
 ```bash
 # Verificar que existan archivos de audio en servidor Issabel
-ssh root@192.168.3.2 "ls -la /var/spool/asterisk/monitor/"
+ssh root@<SERVIDOR-ISSABEL> "ls -la /var/spool/asterisk/monitor/"
 
 # Verificar SSH desde servidor de analytics
-sshpass -p '<password-ssh>' ssh root@192.168.3.2 "hostname"
+sshpass -p '<password-ssh>' ssh root@<SERVIDOR-ISSABEL> "hostname"
 
 # Verificar dependencias
 which sshpass
@@ -788,7 +788,7 @@ cd /opt/callcenter-analytics/backend/migrations
 ./deploy.sh
 
 # Verificar que las vistas existan
-mysql -h 192.168.3.2 -u asteriskuser -p asteriskcdrdb -e "SHOW TABLES LIKE 'v_%';"
+mysql -h <SERVIDOR-ISSABEL> -u asteriskuser -p asteriskcdrdb -e "SHOW TABLES LIKE 'v_%';"
 
 # Ver logs para confirmar uso de vistas optimizadas
 journalctl -u callcenter-api | grep "OPTIMIZED"
@@ -810,7 +810,7 @@ tail -f /var/log/nginx/access.log
 tail -f /var/log/nginx/error.log
 
 # Queue log de Asterisk (en servidor Issabel)
-ssh root@192.168.3.2 "tail -f /var/log/asterisk/queue_log"
+ssh root@<SERVIDOR-ISSABEL> "tail -f /var/log/asterisk/queue_log"
 ```
 
 ### Backup de Base de Datos
@@ -821,8 +821,8 @@ cp /opt/callcenter-analytics/backend/users.db \
    /opt/backups/users_$(date +%Y%m%d).db
 
 # Backup de queue_log (MySQL - en servidor Issabel)
-ssh root@192.168.3.2 "mysqldump -u asteriskuser -p asteriskcdrdb queue_log | gzip > /tmp/queue_log_backup.sql.gz"
-scp root@192.168.3.2:/tmp/queue_log_backup.sql.gz /opt/backups/
+ssh root@<SERVIDOR-ISSABEL> "mysqldump -u asteriskuser -p asteriskcdrdb queue_log | gzip > /tmp/queue_log_backup.sql.gz"
+scp root@<SERVIDOR-ISSABEL>:/tmp/queue_log_backup.sql.gz /opt/backups/
 ```
 
 ### Rotación de Logs
@@ -833,7 +833,7 @@ Issabel rota automáticamente el `queue_log`. El parser maneja correctamente arc
 
 ```bash
 # Limpiar grabaciones en caché mayores a 24 horas (desde el propio servidor)
-curl -X POST "http://127.0.0.1:8000/api/recordings/cleanup-cache?max_age_hours=24"
+curl -X POST "http://127.0.0.1:<PUERTO-API>/api/recordings/cleanup-cache?max_age_hours=24"
 ```
 
 ---
@@ -853,15 +853,15 @@ curl -X POST "http://127.0.0.1:8000/api/recordings/cleanup-cache?max_age_hours=2
 ### Conexiones Requeridas
 
 **MySQL (asteriskcdrdb):**
-- Host: 192.168.3.2
-- Puerto: 3306
+- Host: <SERVIDOR-ISSABEL>
+- Puerto: <PUERTO-DB>
 - Usuario: asteriskuser
 - Password: <contraseña>
 - Base de datos: asteriskcdrdb
 - Tabla principal: queue_log
 
 **SSH (para grabaciones):**
-- Host: 192.168.3.2
+- Host: <SERVIDOR-ISSABEL>
 - Usuario: root
 - Password: <password-ssh>
 - Ruta grabaciones: /var/spool/asterisk/monitor/
@@ -954,4 +954,4 @@ Proyecto interno de uso empresarial - Clínica MACSA.
 - 📖 **Docs (Swagger):** https://metricas.macsalud.com/docs *(solo desde la red interna)*
 - 🔍 **ReDoc:** https://metricas.macsalud.com/redoc *(solo desde la red interna)*
 - 💚 **Health:** https://metricas.macsalud.com/health
-- 🖥️ **Acceso local directo (LAN):** https://192.168.11.3
+- 🖥️ **Acceso local directo (LAN):** https://<SERVIDOR-APP>
